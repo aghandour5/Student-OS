@@ -1,0 +1,563 @@
+import React, { useState, useMemo, useRef } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, Platform,
+  Dimensions, ActivityIndicator, Modal
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import Svg, { Line, Circle as SvgCircle, Rect, Text as SvgText } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
+import Colors from '@/constants/colors';
+import { useAcademic } from '@/lib/academic-context';
+import type { CourseWithPrereqs } from '@shared/schema';
+
+const NODE_WIDTH = 130;
+const NODE_HEIGHT = 56;
+const YEAR_GAP = 180;
+const COURSE_GAP = 16;
+const LEFT_MARGIN = 20;
+const TOP_MARGIN = 30;
+
+type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'future';
+
+const statusColors: Record<CourseStatus, string> = {
+  completed: Colors.courseCompleted,
+  in_progress: Colors.courseInProgress,
+  available: Colors.primary,
+  locked: Colors.courseLocked,
+  future: Colors.courseFuture,
+};
+
+interface NodePosition {
+  x: number;
+  y: number;
+  course: CourseWithPrereqs;
+}
+
+function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      style={[styles.filterChip, active && styles.filterChipActive]}
+    >
+      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export default function MapScreen() {
+  const insets = useSafeAreaInsets();
+  const { courses, isLoading, getCourseStatus } = useAcademic();
+  const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
+  const [selectedCourse, setSelectedCourse] = useState<CourseWithPrereqs | null>(null);
+  const webTopInset = Platform.OS === 'web' ? 67 : 0;
+
+  const semesters = useMemo(() => {
+    const grouped = new Map<string, CourseWithPrereqs[]>();
+    courses.forEach(c => {
+      const key = `Y${c.year}S${c.semester}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(c);
+    });
+    return Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [courses]);
+
+  const { positions, svgWidth, svgHeight } = useMemo(() => {
+    const posMap = new Map<string, NodePosition>();
+    let maxX = 0;
+    let currentY = TOP_MARGIN;
+
+    for (const [_key, semCourses] of semesters) {
+      let currentX = LEFT_MARGIN;
+      for (const course of semCourses) {
+        posMap.set(course.id, { x: currentX, y: currentY, course });
+        currentX += NODE_WIDTH + COURSE_GAP;
+        if (currentX > maxX) maxX = currentX;
+      }
+      currentY += NODE_HEIGHT + YEAR_GAP / 2;
+    }
+
+    return {
+      positions: posMap,
+      svgWidth: Math.max(maxX + LEFT_MARGIN, Dimensions.get('window').width),
+      svgHeight: currentY + 40,
+    };
+  }, [semesters]);
+
+  const edges = useMemo(() => {
+    const result: { from: NodePosition; to: NodePosition; status: CourseStatus }[] = [];
+    courses.forEach(course => {
+      const toPos = positions.get(course.id);
+      if (!toPos) return;
+      course.prerequisites.forEach(prereqId => {
+        const fromPos = positions.get(prereqId);
+        if (!fromPos) return;
+        result.push({ from: fromPos, to: toPos, status: getCourseStatus(course.id) });
+      });
+    });
+    return result;
+  }, [courses, positions, getCourseStatus]);
+
+  const filteredCourses = useMemo(() => {
+    if (selectedFilter === 'all') return courses;
+    return courses.filter(c => getCourseStatus(c.id) === selectedFilter);
+  }, [courses, selectedFilter, getCourseStatus]);
+
+  const filteredIds = useMemo(() => new Set(filteredCourses.map(c => c.id)), [filteredCourses]);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  const semesterLabels = [
+    'Year 1 - Fall', 'Year 1 - Spring',
+    'Year 2 - Fall', 'Year 2 - Spring',
+    'Year 3 - Fall', 'Year 3 - Spring',
+    'Year 4 - Fall', 'Year 4 - Spring',
+  ];
+
+  return (
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + webTopInset + 12 }]}>
+        <Text style={styles.headerTitle}>Degree Map</Text>
+        <Text style={styles.headerSubtitle}>Computer Engineering</Text>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterRow}
+        contentContainerStyle={styles.filterContent}
+      >
+        <FilterChip label="All" active={selectedFilter === 'all'} onPress={() => setSelectedFilter('all')} />
+        <FilterChip label="Completed" active={selectedFilter === 'completed'} onPress={() => setSelectedFilter('completed')} />
+        <FilterChip label="In Progress" active={selectedFilter === 'in_progress'} onPress={() => setSelectedFilter('in_progress')} />
+        <FilterChip label="Available" active={selectedFilter === 'available'} onPress={() => setSelectedFilter('available')} />
+        <FilterChip label="Locked" active={selectedFilter === 'locked'} onPress={() => setSelectedFilter('locked')} />
+      </ScrollView>
+
+      <ScrollView
+        style={styles.mapScroll}
+        contentContainerStyle={{ paddingBottom: Platform.OS === 'web' ? 34 + 84 : 100 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <Svg width={svgWidth} height={svgHeight}>
+            {edges.map((edge, i) => {
+              const fromX = edge.from.x + NODE_WIDTH / 2;
+              const fromY = edge.from.y + NODE_HEIGHT;
+              const toX = edge.to.x + NODE_WIDTH / 2;
+              const toY = edge.to.y;
+              const isVisible = filteredIds.has(edge.from.course.id) || filteredIds.has(edge.to.course.id);
+              return (
+                <Line
+                  key={`edge-${i}`}
+                  x1={fromX}
+                  y1={fromY}
+                  x2={toX}
+                  y2={toY}
+                  stroke={isVisible ? statusColors[edge.status] + '50' : Colors.cardBorder + '30'}
+                  strokeWidth={1.5}
+                  strokeDasharray={edge.status === 'locked' ? '4,4' : undefined}
+                />
+              );
+            })}
+
+            {semesters.map(([key], idx) => {
+              const semCourses = semesters[idx][1];
+              if (semCourses.length === 0) return null;
+              const firstPos = positions.get(semCourses[0].id);
+              if (!firstPos) return null;
+              return (
+                <SvgText
+                  key={`label-${key}`}
+                  x={LEFT_MARGIN}
+                  y={firstPos.y - 10}
+                  fill={Colors.textSecondary}
+                  fontSize={11}
+                  fontWeight="600"
+                >
+                  {semesterLabels[idx] || key}
+                </SvgText>
+              );
+            })}
+
+            {Array.from(positions.entries()).map(([courseId, pos]) => {
+              const status = getCourseStatus(courseId);
+              const color = statusColors[status];
+              const isVisible = filteredIds.has(courseId);
+              const opacity = isVisible ? 1 : 0.25;
+
+              return (
+                <React.Fragment key={courseId}>
+                  <Rect
+                    x={pos.x}
+                    y={pos.y}
+                    width={NODE_WIDTH}
+                    height={NODE_HEIGHT}
+                    rx={12}
+                    fill={Colors.card}
+                    stroke={color}
+                    strokeWidth={status === 'completed' ? 2 : 1}
+                    opacity={opacity}
+                  />
+                  <Rect
+                    x={pos.x}
+                    y={pos.y}
+                    width={4}
+                    height={NODE_HEIGHT}
+                    rx={2}
+                    fill={color}
+                    opacity={opacity}
+                  />
+                  <SvgText
+                    x={pos.x + 12}
+                    y={pos.y + 20}
+                    fill={Colors.textSecondary}
+                    fontSize={9}
+                    fontWeight="600"
+                    opacity={opacity}
+                  >
+                    {pos.course.code}
+                  </SvgText>
+                  <SvgText
+                    x={pos.x + 12}
+                    y={pos.y + 36}
+                    fill={Colors.text}
+                    fontSize={10}
+                    fontWeight="500"
+                    opacity={opacity}
+                  >
+                    {pos.course.title.length > 16 ? pos.course.title.substring(0, 15) + '...' : pos.course.title}
+                  </SvgText>
+                  <SvgText
+                    x={pos.x + NODE_WIDTH - 8}
+                    y={pos.y + 16}
+                    fill={color}
+                    fontSize={9}
+                    fontWeight="700"
+                    textAnchor="end"
+                    opacity={opacity}
+                  >
+                    {pos.course.credits}cr
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+          </Svg>
+
+          <View style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}>
+            {Array.from(positions.entries()).map(([courseId, pos]) => {
+              const isVisible = filteredIds.has(courseId);
+              if (!isVisible) return null;
+              return (
+                <Pressable
+                  key={`touch-${courseId}`}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedCourse(pos.course);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: pos.x,
+                    top: pos.y,
+                    width: NODE_WIDTH,
+                    height: NODE_HEIGHT,
+                  }}
+                />
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <View style={styles.legend}>
+          {(['completed', 'in_progress', 'available', 'locked'] as CourseStatus[]).map(status => (
+            <View key={status} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: statusColors[status] }]} />
+              <Text style={styles.legendText}>{status.replace('_', ' ')}</Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={!!selectedCourse}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSelectedCourse(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedCourse(null)}>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+            {selectedCourse && (
+              <>
+                <View style={styles.modalHandle} />
+                <View style={styles.modalHeader}>
+                  <View style={[styles.modalStatusDot, { backgroundColor: statusColors[getCourseStatus(selectedCourse.id)] }]} />
+                  <View style={styles.modalHeaderInfo}>
+                    <Text style={styles.modalCode}>{selectedCourse.code}</Text>
+                    <Text style={styles.modalTitle}>{selectedCourse.title}</Text>
+                  </View>
+                  <Pressable onPress={() => setSelectedCourse(null)}>
+                    <Ionicons name="close" size={24} color={Colors.textSecondary} />
+                  </Pressable>
+                </View>
+                <Text style={styles.modalDesc}>{selectedCourse.description}</Text>
+                <View style={styles.modalMeta}>
+                  <View style={styles.modalMetaItem}>
+                    <MaterialCommunityIcons name="school" size={16} color={Colors.primary} />
+                    <Text style={styles.modalMetaText}>{selectedCourse.credits} Credits</Text>
+                  </View>
+                  <View style={styles.modalMetaItem}>
+                    <Ionicons name="folder-outline" size={16} color={Colors.primary} />
+                    <Text style={styles.modalMetaText}>{selectedCourse.category}</Text>
+                  </View>
+                </View>
+                {selectedCourse.prerequisites.length > 0 && (
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Prerequisites</Text>
+                    {selectedCourse.prerequisites.map(pid => {
+                      const prereqStatus = getCourseStatus(pid);
+                      const prereqCourse = courses.find(c => c.id === pid);
+                      return (
+                        <View key={pid} style={styles.prereqItem}>
+                          <View style={[styles.prereqDot, { backgroundColor: statusColors[prereqStatus] }]} />
+                          <Text style={styles.prereqCode}>{prereqCourse?.code ?? pid}</Text>
+                          <Text style={styles.prereqName}>{prereqCourse?.title ?? ''}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    setSelectedCourse(null);
+                    router.push({ pathname: '/course/[id]', params: { id: selectedCourse.id } });
+                  }}
+                  style={styles.modalButton}
+                >
+                  <Text style={styles.modalButtonText}>View Full Details</Text>
+                  <Ionicons name="arrow-forward" size={18} color={Colors.white} />
+                </Pressable>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 2,
+  },
+  filterRow: {
+    maxHeight: 44,
+    marginBottom: 8,
+  },
+  filterContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary + '25',
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_500Medium',
+  },
+  filterChipTextActive: {
+    color: Colors.primary,
+  },
+  mapScroll: {
+    flex: 1,
+  },
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    paddingVertical: 16,
+    flexWrap: 'wrap',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    textTransform: 'capitalize',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: Colors.backgroundSecondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.cardBorder,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  modalStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  modalHeaderInfo: {
+    flex: 1,
+  },
+  modalCode: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+    marginTop: 2,
+  },
+  modalDesc: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  modalMeta: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 16,
+  },
+  modalMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modalMetaText: {
+    fontSize: 13,
+    color: Colors.text,
+    fontFamily: 'Inter_500Medium',
+  },
+  modalSection: {
+    marginBottom: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_600SemiBold',
+    marginBottom: 8,
+  },
+  prereqItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  prereqDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  prereqCode: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_600SemiBold',
+    width: 70,
+  },
+  prereqName: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+    flex: 1,
+  },
+  modalButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  modalButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.white,
+    fontFamily: 'Inter_600SemiBold',
+  },
+});
