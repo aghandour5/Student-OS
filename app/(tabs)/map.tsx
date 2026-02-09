@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback, startTransition } from 'react';
+import React, { useState, useMemo, useCallback, startTransition } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
   Dimensions, ActivityIndicator
@@ -54,6 +54,15 @@ export default function MapScreen() {
   const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
   const [pendingFilter, setPendingFilter] = useState<CourseStatus | 'all'>('all');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [pendingHighlight, setPendingHighlight] = useState<string | null | undefined>(undefined);
+
+  const handleHighlight = useCallback((newId: string | null) => {
+    setPendingHighlight(newId);
+    startTransition(() => {
+      setHighlightedId(newId);
+      setPendingHighlight(undefined);
+    });
+  }, []);
 
   const handleFilterChange = useCallback((filter: CourseStatus | 'all') => {
     setPendingFilter(filter);
@@ -171,6 +180,12 @@ export default function MapScreen() {
         <View style={styles.filterLoading}>
           <ActivityIndicator size="small" color={Colors.primary} />
           <Text style={styles.filterLoadingText}>Filtering...</Text>
+        </View>
+      )}
+
+      {pendingHighlight !== undefined && (
+        <View style={styles.highlightLoading}>
+          <ActivityIndicator size="small" color={Colors.primary} />
         </View>
       )}
 
@@ -332,7 +347,7 @@ export default function MapScreen() {
                     textAnchor="end"
                     opacity={opacity}
                   >
-                    {pos.course.credits}cr
+                    {pos.course.credits} cr
                   </SvgText>
                 </React.Fragment>
               );
@@ -344,7 +359,7 @@ export default function MapScreen() {
             onPress={() => {
               if (highlightedId) {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setHighlightedId(null);
+                handleHighlight(null);
               }
             }}
           >
@@ -358,7 +373,7 @@ export default function MapScreen() {
                   onPress={(e) => {
                     e.stopPropagation();
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setHighlightedId(prev => prev === courseId ? null : courseId);
+                    handleHighlight(highlightedId === courseId ? null : courseId);
                   }}
                   style={{
                     position: 'absolute',
@@ -456,6 +471,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.primary,
     fontFamily: 'Inter_500Medium',
+  },
+  highlightLoading: {
+    position: 'absolute' as any,
+    top: '50%' as any,
+    alignSelf: 'center',
+    zIndex: 50,
+    backgroundColor: Colors.card + 'CC',
+    borderRadius: 20,
+    padding: 10,
   },
   mapScroll: {
     flex: 1,
