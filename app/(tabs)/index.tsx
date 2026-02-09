@@ -388,8 +388,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
   },
   searchBarFocused: {
-    borderColor: Colors.primary + '80',
+    borderColor: Colors.primary + '40',
     backgroundColor: Colors.cardElevated,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
   },
   searchInput: {
     flex: 1,
