@@ -121,7 +121,10 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.searchContainer}>
-          <View style={[styles.searchBar, searchFocused && styles.searchBarFocused]}>
+          <Pressable
+            style={[styles.searchBar, searchFocused && styles.searchBarFocused]}
+            onPress={() => inputRef.current?.focus()}
+          >
             <Ionicons name="search" size={18} color={searchFocused ? Colors.primary : Colors.textMuted} />
             <TextInput
               ref={inputRef}
@@ -142,7 +145,7 @@ export default function DashboardScreen() {
                 <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
               </Pressable>
             )}
-          </View>
+          </Pressable>
           {showResults && (
             <View style={styles.searchResults}>
               {searchResults.length > 0 ? (
