@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback, startTransition } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
   Dimensions, ActivityIndicator, Modal
@@ -53,7 +53,15 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { courses, isLoading, getCourseStatus } = useAcademic();
   const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
+  const [pendingFilter, setPendingFilter] = useState<CourseStatus | 'all'>('all');
   const [selectedCourse, setSelectedCourse] = useState<CourseWithPrereqs | null>(null);
+
+  const handleFilterChange = useCallback((filter: CourseStatus | 'all') => {
+    setPendingFilter(filter);
+    startTransition(() => {
+      setSelectedFilter(filter);
+    });
+  }, []);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
   const semesters = useMemo(() => {
@@ -137,12 +145,19 @@ export default function MapScreen() {
         style={styles.filterRow}
         contentContainerStyle={styles.filterContent}
       >
-        <FilterChip label="All" active={selectedFilter === 'all'} onPress={() => setSelectedFilter('all')} />
-        <FilterChip label="Completed" active={selectedFilter === 'completed'} onPress={() => setSelectedFilter('completed')} />
-        <FilterChip label="In Progress" active={selectedFilter === 'in_progress'} onPress={() => setSelectedFilter('in_progress')} />
-        <FilterChip label="Available" active={selectedFilter === 'available'} onPress={() => setSelectedFilter('available')} />
-        <FilterChip label="Locked" active={selectedFilter === 'locked'} onPress={() => setSelectedFilter('locked')} />
+        <FilterChip label="All" active={pendingFilter === 'all'} onPress={() => handleFilterChange('all')} />
+        <FilterChip label="Completed" active={pendingFilter === 'completed'} onPress={() => handleFilterChange('completed')} />
+        <FilterChip label="In Progress" active={pendingFilter === 'in_progress'} onPress={() => handleFilterChange('in_progress')} />
+        <FilterChip label="Available" active={pendingFilter === 'available'} onPress={() => handleFilterChange('available')} />
+        <FilterChip label="Locked" active={pendingFilter === 'locked'} onPress={() => handleFilterChange('locked')} />
       </ScrollView>
+
+      {pendingFilter !== selectedFilter && (
+        <View style={styles.filterLoading}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.filterLoadingText}>Filtering...</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.mapScroll}
@@ -413,6 +428,18 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: Colors.primary,
+  },
+  filterLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  filterLoadingText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontFamily: 'Inter_500Medium',
   },
   mapScroll: {
     flex: 1,

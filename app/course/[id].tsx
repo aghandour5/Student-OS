@@ -58,7 +58,10 @@ export default function CourseDetailScreen() {
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
+            if (router.canGoBack()) {
+              router.dismissAll();
+            }
+            router.replace('/');
           }}
           style={styles.backBtn}
         >
@@ -163,7 +166,7 @@ export default function CourseDetailScreen() {
                   key={prereq.id}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push({ pathname: '/course/[id]', params: { id: prereq.id } });
+                    router.replace({ pathname: '/course/[id]', params: { id: prereq.id } });
                   }}
                   style={styles.prereqCard}
                 >
@@ -200,7 +203,7 @@ export default function CourseDetailScreen() {
                 key={unlock.id}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: '/course/[id]', params: { id: unlock.id } });
+                  router.replace({ pathname: '/course/[id]', params: { id: unlock.id } });
                 }}
                 style={styles.prereqCard}
               >
