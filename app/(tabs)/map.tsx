@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Line, Circle as SvgCircle, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Circle as SvgCircle, Rect, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
@@ -55,6 +55,7 @@ export default function MapScreen() {
   const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
   const [pendingFilter, setPendingFilter] = useState<CourseStatus | 'all'>('all');
   const [selectedCourse, setSelectedCourse] = useState<CourseWithPrereqs | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const handleFilterChange = useCallback((filter: CourseStatus | 'all') => {
     setPendingFilter(filter);
@@ -109,6 +110,22 @@ export default function MapScreen() {
     });
     return result;
   }, [courses, positions, getCourseStatus]);
+
+  const { connectedNodeIds, connectedEdgeIndices } = useMemo(() => {
+    if (!highlightedId) return { connectedNodeIds: new Set<string>(), connectedEdgeIndices: new Set<number>() };
+    const nodeIds = new Set<string>([highlightedId]);
+    const edgeIdxs = new Set<number>();
+    edges.forEach((edge, i) => {
+      const fromId = edge.from.course.id;
+      const toId = edge.to.course.id;
+      if (fromId === highlightedId || toId === highlightedId) {
+        edgeIdxs.add(i);
+        nodeIds.add(fromId);
+        nodeIds.add(toId);
+      }
+    });
+    return { connectedNodeIds: nodeIds, connectedEdgeIndices: edgeIdxs };
+  }, [highlightedId, edges]);
 
   const filteredCourses = useMemo(() => {
     if (selectedFilter === 'all') return courses;
@@ -172,6 +189,11 @@ export default function MapScreen() {
               const toX = edge.to.x + NODE_WIDTH / 2;
               const toY = edge.to.y;
               const isVisible = filteredIds.has(edge.from.course.id) || filteredIds.has(edge.to.course.id);
+              const isHighlighted = highlightedId ? connectedEdgeIndices.has(i) : false;
+              const isDimmed = highlightedId ? !isHighlighted : false;
+
+              if (isHighlighted) return null;
+
               return (
                 <Line
                   key={`edge-${i}`}
@@ -179,10 +201,43 @@ export default function MapScreen() {
                   y1={fromY}
                   x2={toX}
                   y2={toY}
-                  stroke={isVisible ? statusColors[edge.status] + '50' : Colors.cardBorder + '30'}
+                  stroke={isDimmed ? Colors.cardBorder + '15' : isVisible ? statusColors[edge.status] + '50' : Colors.cardBorder + '30'}
                   strokeWidth={1.5}
                   strokeDasharray={edge.status === 'locked' ? '4,4' : undefined}
                 />
+              );
+            })}
+
+            {highlightedId && edges.map((edge, i) => {
+              if (!connectedEdgeIndices.has(i)) return null;
+              const fromX = edge.from.x + NODE_WIDTH / 2;
+              const fromY = edge.from.y + NODE_HEIGHT;
+              const toX = edge.to.x + NODE_WIDTH / 2;
+              const toY = edge.to.y;
+              const edgeColor = statusColors[getCourseStatus(highlightedId)];
+              return (
+                <React.Fragment key={`hl-edge-${i}`}>
+                  <Line
+                    x1={fromX}
+                    y1={fromY}
+                    x2={toX}
+                    y2={toY}
+                    stroke={edgeColor + '30'}
+                    strokeWidth={8}
+                    strokeLinecap="round"
+                  />
+                  <Line
+                    x1={fromX}
+                    y1={fromY}
+                    x2={toX}
+                    y2={toY}
+                    stroke={edgeColor}
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                  />
+                  <SvgCircle cx={fromX} cy={fromY} r={4} fill={edgeColor} />
+                  <SvgCircle cx={toX} cy={toY} r={4} fill={edgeColor} />
+                </React.Fragment>
               );
             })}
 
@@ -199,6 +254,7 @@ export default function MapScreen() {
                   fill={Colors.textSecondary}
                   fontSize={11}
                   fontWeight="600"
+                  opacity={highlightedId ? 0.3 : 1}
                 >
                   {semesterLabels[idx] || key}
                 </SvgText>
@@ -209,19 +265,35 @@ export default function MapScreen() {
               const status = getCourseStatus(courseId);
               const color = statusColors[status];
               const isVisible = filteredIds.has(courseId);
-              const opacity = isVisible ? 1 : 0.25;
+              const isConnected = highlightedId ? connectedNodeIds.has(courseId) : false;
+              const isTheHighlighted = courseId === highlightedId;
+              const dimForHighlight = highlightedId ? !isConnected : false;
+              const opacity = dimForHighlight ? 0.15 : isVisible ? 1 : 0.25;
 
               return (
                 <React.Fragment key={courseId}>
+                  {isTheHighlighted && (
+                    <Rect
+                      x={pos.x - 3}
+                      y={pos.y - 3}
+                      width={NODE_WIDTH + 6}
+                      height={NODE_HEIGHT + 6}
+                      rx={14}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={2}
+                      opacity={0.4}
+                    />
+                  )}
                   <Rect
                     x={pos.x}
                     y={pos.y}
                     width={NODE_WIDTH}
                     height={NODE_HEIGHT}
                     rx={12}
-                    fill={Colors.card}
-                    stroke={color}
-                    strokeWidth={status === 'completed' ? 2 : 1}
+                    fill={isConnected && !isTheHighlighted ? color + '15' : Colors.card}
+                    stroke={isConnected ? color : color}
+                    strokeWidth={isTheHighlighted ? 2.5 : isConnected ? 1.5 : 1}
                     opacity={opacity}
                   />
                   <Rect
@@ -276,8 +348,10 @@ export default function MapScreen() {
               return (
                 <Pressable
                   key={`touch-${courseId}`}
+                  testID={`map-node-${pos.course.code}`}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setHighlightedId(prev => prev === courseId ? null : courseId);
                     setSelectedCourse(pos.course);
                   }}
                   style={{
@@ -307,9 +381,9 @@ export default function MapScreen() {
         visible={!!selectedCourse}
         animationType="slide"
         transparent
-        onRequestClose={() => setSelectedCourse(null)}
+        onRequestClose={() => { setSelectedCourse(null); setHighlightedId(null); }}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setSelectedCourse(null)}>
+        <Pressable style={styles.modalOverlay} onPress={() => { setSelectedCourse(null); setHighlightedId(null); }}>
           <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
             {selectedCourse && (
               <>
@@ -320,7 +394,7 @@ export default function MapScreen() {
                     <Text style={styles.modalCode}>{selectedCourse.code}</Text>
                     <Text style={styles.modalTitle}>{selectedCourse.title}</Text>
                   </View>
-                  <Pressable onPress={() => setSelectedCourse(null)}>
+                  <Pressable onPress={() => { setSelectedCourse(null); setHighlightedId(null); }}>
                     <Ionicons name="close" size={24} color={Colors.textSecondary} />
                   </Pressable>
                 </View>
@@ -355,6 +429,7 @@ export default function MapScreen() {
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                     setSelectedCourse(null);
+                    setHighlightedId(null);
                     router.push({ pathname: '/course/[id]', params: { id: selectedCourse.id } });
                   }}
                   style={styles.modalButton}
