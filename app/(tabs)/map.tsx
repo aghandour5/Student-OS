@@ -1,13 +1,12 @@
 import React, { useState, useMemo, useRef, useCallback, startTransition } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  Dimensions, ActivityIndicator, Modal
+  Dimensions, ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line, Circle as SvgCircle, Rect, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
 import type { CourseWithPrereqs } from '@shared/schema';
@@ -54,7 +53,6 @@ export default function MapScreen() {
   const { courses, isLoading, getCourseStatus } = useAcademic();
   const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
   const [pendingFilter, setPendingFilter] = useState<CourseStatus | 'all'>('all');
-  const [selectedCourse, setSelectedCourse] = useState<CourseWithPrereqs | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const handleFilterChange = useCallback((filter: CourseStatus | 'all') => {
@@ -341,7 +339,15 @@ export default function MapScreen() {
             })}
           </Svg>
 
-          <View style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}>
+          <Pressable
+            style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}
+            onPress={() => {
+              if (highlightedId) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setHighlightedId(null);
+              }
+            }}
+          >
             {Array.from(positions.entries()).map(([courseId, pos]) => {
               const isVisible = filteredIds.has(courseId);
               if (!isVisible) return null;
@@ -349,10 +355,10 @@ export default function MapScreen() {
                 <Pressable
                   key={`touch-${courseId}`}
                   testID={`map-node-${pos.course.code}`}
-                  onPress={() => {
+                  onPress={(e) => {
+                    e.stopPropagation();
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setHighlightedId(prev => prev === courseId ? null : courseId);
-                    setSelectedCourse(pos.course);
                   }}
                   style={{
                     position: 'absolute',
@@ -364,7 +370,7 @@ export default function MapScreen() {
                 />
               );
             })}
-          </View>
+          </Pressable>
         </ScrollView>
 
         <View style={styles.legend}>
@@ -377,71 +383,6 @@ export default function MapScreen() {
         </View>
       </ScrollView>
 
-      <Modal
-        visible={!!selectedCourse}
-        animationType="slide"
-        transparent
-        onRequestClose={() => { setSelectedCourse(null); setHighlightedId(null); }}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => { setSelectedCourse(null); setHighlightedId(null); }}>
-          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
-            {selectedCourse && (
-              <>
-                <View style={styles.modalHandle} />
-                <View style={styles.modalHeader}>
-                  <View style={[styles.modalStatusDot, { backgroundColor: statusColors[getCourseStatus(selectedCourse.id)] }]} />
-                  <View style={styles.modalHeaderInfo}>
-                    <Text style={styles.modalCode}>{selectedCourse.code}</Text>
-                    <Text style={styles.modalTitle}>{selectedCourse.title}</Text>
-                  </View>
-                  <Pressable onPress={() => { setSelectedCourse(null); setHighlightedId(null); }}>
-                    <Ionicons name="close" size={24} color={Colors.textSecondary} />
-                  </Pressable>
-                </View>
-                <Text style={styles.modalDesc}>{selectedCourse.description}</Text>
-                <View style={styles.modalMeta}>
-                  <View style={styles.modalMetaItem}>
-                    <MaterialCommunityIcons name="school" size={16} color={Colors.primary} />
-                    <Text style={styles.modalMetaText}>{selectedCourse.credits} Credits</Text>
-                  </View>
-                  <View style={styles.modalMetaItem}>
-                    <Ionicons name="folder-outline" size={16} color={Colors.primary} />
-                    <Text style={styles.modalMetaText}>{selectedCourse.category}</Text>
-                  </View>
-                </View>
-                {selectedCourse.prerequisites.length > 0 && (
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Prerequisites</Text>
-                    {selectedCourse.prerequisites.map(pid => {
-                      const prereqStatus = getCourseStatus(pid);
-                      const prereqCourse = courses.find(c => c.id === pid);
-                      return (
-                        <View key={pid} style={styles.prereqItem}>
-                          <View style={[styles.prereqDot, { backgroundColor: statusColors[prereqStatus] }]} />
-                          <Text style={styles.prereqCode}>{prereqCourse?.code ?? pid}</Text>
-                          <Text style={styles.prereqName}>{prereqCourse?.title ?? ''}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setSelectedCourse(null);
-                    setHighlightedId(null);
-                    router.push({ pathname: '/course/[id]', params: { id: selectedCourse.id } });
-                  }}
-                  style={styles.modalButton}
-                >
-                  <Text style={styles.modalButtonText}>View Full Details</Text>
-                  <Ionicons name="arrow-forward" size={18} color={Colors.white} />
-                </Pressable>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -541,125 +482,5 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     textTransform: 'capitalize',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: Colors.backgroundSecondary,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '70%',
-  },
-  modalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.cardBorder,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  modalStatusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  modalHeaderInfo: {
-    flex: 1,
-  },
-  modalCode: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    color: Colors.text,
-    fontFamily: 'Inter_700Bold',
-    marginTop: 2,
-  },
-  modalDesc: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    fontFamily: 'Inter_400Regular',
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  modalMeta: {
-    flexDirection: 'row',
-    gap: 20,
-    marginBottom: 16,
-  },
-  modalMetaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  modalMetaText: {
-    fontSize: 13,
-    color: Colors.text,
-    fontFamily: 'Inter_500Medium',
-  },
-  modalSection: {
-    marginBottom: 16,
-  },
-  modalSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    fontFamily: 'Inter_600SemiBold',
-    marginBottom: 8,
-  },
-  prereqItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-  },
-  prereqDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  prereqCode: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    fontFamily: 'Inter_600SemiBold',
-    width: 70,
-  },
-  prereqName: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_400Regular',
-    flex: 1,
-  },
-  modalButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  modalButtonText: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: Colors.white,
-    fontFamily: 'Inter_600SemiBold',
   },
 });
