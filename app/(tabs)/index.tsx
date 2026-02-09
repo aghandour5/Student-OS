@@ -403,6 +403,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     height: '100%' as any,
     paddingVertical: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
   },
   searchResults: {
     position: 'absolute' as any,
