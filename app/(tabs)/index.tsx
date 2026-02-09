@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator
+  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator,
+  TextInput, Keyboard, FlatList
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,12 +12,39 @@ import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
 import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
+import type { CourseWithPrereqs } from '@shared/schema';
 
 function getGPAColor(gpa: number): string {
   if (gpa >= 3.5) return Colors.gpaExcellent;
   if (gpa >= 3.0) return Colors.gpaGood;
   if (gpa >= 2.0) return Colors.gpaAverage;
   return Colors.gpaLow;
+}
+
+function SearchResultItem({ course, status, onPress }: {
+  course: CourseWithPrereqs;
+  status: string;
+  onPress: () => void;
+}) {
+  const statusColor = status === 'completed' ? Colors.courseCompleted
+    : status === 'in_progress' ? Colors.courseInProgress
+    : status === 'available' ? Colors.primary
+    : Colors.courseLocked;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.searchResultItem, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      <View style={[styles.searchResultDot, { backgroundColor: statusColor }]} />
+      <View style={styles.searchResultInfo}>
+        <Text style={styles.searchResultCode}>{course.code}</Text>
+        <Text style={styles.searchResultTitle} numberOfLines={1}>{course.title}</Text>
+      </View>
+      <Text style={styles.searchResultCredits}>{course.credits}cr</Text>
+      <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+    </Pressable>
+  );
 }
 
 export default function DashboardScreen() {
@@ -27,9 +55,38 @@ export default function DashboardScreen() {
     calculateGPA, getCourseStatus,
   } = useAcademic();
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
   const gpa = calculateGPA();
   const progress = totalCredits > 0 ? completedCredits / totalCredits : 0;
+
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return courses.filter(c =>
+      c.code.toLowerCase().includes(q) ||
+      c.title.toLowerCase().includes(q) ||
+      c.category?.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [searchQuery, courses]);
+
+  const showResults = searchFocused && searchQuery.trim().length > 0;
+
+  const handleSearchSelect = useCallback((courseId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSearchQuery('');
+    setSearchFocused(false);
+    Keyboard.dismiss();
+    router.push({ pathname: '/course/[id]', params: { id: courseId } });
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    inputRef.current?.focus();
+  }, []);
 
   const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
   const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
@@ -46,17 +103,7 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: insets.top + webTopInset + 16,
-            paddingBottom: Platform.OS === 'web' ? 34 + 84 : 100,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={[styles.fixedHeader, { paddingTop: insets.top + webTopInset + 16 }]}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.greeting}>Computer Engineering</Text>
@@ -73,6 +120,68 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
+        <View style={styles.searchContainer}>
+          <View style={[styles.searchBar, searchFocused && styles.searchBarFocused]}>
+            <Ionicons name="search" size={18} color={searchFocused ? Colors.primary : Colors.textMuted} />
+            <TextInput
+              ref={inputRef}
+              style={styles.searchInput}
+              placeholder="Search courses..."
+              placeholderTextColor={Colors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              testID="course-search-input"
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={clearSearch} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+              </Pressable>
+            )}
+          </View>
+          {showResults && (
+            <View style={styles.searchResults}>
+              {searchResults.length > 0 ? (
+                <ScrollView
+                  style={styles.searchResultsScroll}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                >
+                  {searchResults.map(course => (
+                    <SearchResultItem
+                      key={course.id}
+                      course={course}
+                      status={getCourseStatus(course.id)}
+                      onPress={() => handleSearchSelect(course.id)}
+                    />
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.searchEmpty}>
+                  <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
+                  <Text style={styles.searchEmptyText}>No courses found</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: Platform.OS === 'web' ? 34 + 84 : 100,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <LinearGradient
           colors={['#0F2847', '#0B1E3D', '#0B1426']}
           style={styles.gpaCard}
@@ -244,17 +353,115 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  fixedHeader: {
+    paddingHorizontal: 16,
+    backgroundColor: Colors.background,
+    zIndex: 100,
+  },
   scrollView: {
     flex: 1,
   },
   content: {
     paddingHorizontal: 16,
+    paddingTop: 8,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
+  },
+  searchContainer: {
+    marginBottom: 16,
+    zIndex: 100,
+    position: 'relative' as any,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 44,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  searchBarFocused: {
+    borderColor: Colors.primary + '80',
+    backgroundColor: Colors.cardElevated,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    height: '100%' as any,
+    paddingVertical: 0,
+  },
+  searchResults: {
+    position: 'absolute' as any,
+    top: 50,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.cardElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    overflow: 'hidden',
+    zIndex: 200,
+    elevation: 10,
+    ...(Platform.OS === 'web' ? { boxShadow: '0 8px 24px rgba(0,0,0,0.4)' } : {}),
+  },
+  searchResultsScroll: {
+    maxHeight: 320,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.cardBorder,
+  },
+  searchResultDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  searchResultInfo: {
+    flex: 1,
+  },
+  searchResultCode: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.5,
+  },
+  searchResultTitle: {
+    fontSize: 13,
+    color: Colors.text,
+    fontFamily: 'Inter_500Medium',
+    marginTop: 1,
+  },
+  searchResultCredits: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  searchEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 20,
+  },
+  searchEmptyText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
   },
   greeting: {
     fontSize: 22,
