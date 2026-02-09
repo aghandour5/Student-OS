@@ -15,16 +15,25 @@ import {
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AcademicProvider } from "@/lib/academic-context";
+import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back", headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    <Stack
+      screenOptions={{
+        headerBackTitle: "Back",
+        headerShown: false,
+        animation: "slide_from_right",
+        contentStyle: { backgroundColor: Colors.background },
+        gestureEnabled: true,
+      }}
+    >
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
       <Stack.Screen
         name="course/[id]"
-        options={{ headerShown: false, presentation: "card" }}
+        options={{ headerShown: false, animation: "slide_from_right" }}
       />
     </Stack>
   );
