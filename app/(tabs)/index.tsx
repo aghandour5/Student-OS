@@ -14,6 +14,15 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
 import type { CourseWithPrereqs } from '@shared/schema';
 
+function OfflineBanner({ topInset }: { topInset: number }) {
+  return (
+    <View style={[styles.offlineBanner, { paddingTop: topInset + 8 }]}>
+      <Ionicons name="cloud-offline-outline" size={14} color={Colors.warning} />
+      <Text style={styles.offlineText}>Offline mode - using local data</Text>
+    </View>
+  );
+}
+
 function getGPAColor(gpa: number): string {
   if (gpa >= 3.5) return Colors.gpaExcellent;
   if (gpa >= 3.0) return Colors.gpaGood;
@@ -28,8 +37,8 @@ function SearchResultItem({ course, status, onPress }: {
 }) {
   const statusColor = status === 'completed' ? Colors.courseCompleted
     : status === 'in_progress' ? Colors.courseInProgress
-    : status === 'available' ? Colors.primary
-    : Colors.courseLocked;
+      : status === 'available' ? Colors.primary
+        : Colors.courseLocked;
 
   return (
     <Pressable
@@ -50,7 +59,7 @@ function SearchResultItem({ course, status, onPress }: {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const {
-    profile, courses, isLoading,
+    profile, courses, isLoading, isOnline,
     totalCredits, completedCredits, inProgressCredits,
     calculateGPA, getCourseStatus,
   } = useAcademic();
@@ -103,7 +112,8 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.fixedHeader, { paddingTop: insets.top + webTopInset + 16 }]}>
+      {!isOnline && <OfflineBanner topInset={insets.top} />}
+      <View style={[styles.fixedHeader, { paddingTop: !isOnline ? insets.top + 8 : insets.top + webTopInset + 16 }]}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.greeting}>Computer Engineering</Text>
@@ -356,6 +366,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    backgroundColor: Colors.warning + '15',
+  },
+  offlineText: {
+    fontSize: 12,
+    color: Colors.warning,
+    fontFamily: 'Inter_500Medium',
+  },
   fixedHeader: {
     paddingHorizontal: 16,
     backgroundColor: Colors.background,
@@ -397,7 +421,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+    ...Platform.select({ web: { outlineStyle: 'none' } }) as any,
   },
   searchInput: {
     flex: 1,
@@ -406,7 +430,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     height: '100%' as any,
     paddingVertical: 0,
-    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}),
+    ...Platform.select({ web: { outlineStyle: 'none' } }) as any,
   },
   searchResults: {
     position: 'absolute' as any,

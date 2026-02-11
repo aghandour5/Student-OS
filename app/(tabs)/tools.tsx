@@ -1,28 +1,21 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  ActivityIndicator, TextInput, Modal
+  ActivityIndicator, TextInput, Modal, Keyboard, FlatList
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS, SlideInDown, SlideOutDown, FadeIn, FadeOut } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
-import { GRADE_POINTS, GRADE_OPTIONS } from '@shared/schema';
+import { GRADE_POINTS, getLetterGrade } from '@shared/schema';
 
-function GradeButton({ grade, selected, onPress }: { grade: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
-      }}
-      style={[styles.gradeBtn, selected && styles.gradeBtnSelected]}
-    >
-      <Text style={[styles.gradeBtnText, selected && styles.gradeBtnTextSelected]}>{grade}</Text>
-    </Pressable>
-  );
-}
+const clampScore = (score: number) => Math.max(0, Math.min(100, score));
+const scoreToLetterGrade = (score: number) => getLetterGrade(clampScore(score));
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ToolsScreen() {
   const insets = useSafeAreaInsets();
@@ -38,6 +31,8 @@ export default function ToolsScreen() {
   const [projWeights, setProjWeights] = useState({ quizzes: '20', midterm: '30', final: '50' });
   const [projScores, setProjScores] = useState({ quizzes: '', midterm: '', final: '' });
   const [gradeModal, setGradeModal] = useState<string | null>(null);
+  const [numericScoreInput, setNumericScoreInput] = useState('');
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showManage, setShowManage] = useState(false);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
@@ -107,6 +102,158 @@ export default function ToolsScreen() {
     const neededGPA = neededPoints / remainingCredits;
     return { needed: Math.max(0, neededGPA), remaining: remainingCredits };
   }, [profile.grades, courseMap, totalCredits]);
+
+  useEffect(() => {
+    if (!gradeModal) {
+      setNumericScoreInput('');
+      return;
+    }
+    const existing = profile.grades.find(g => g.courseId === gradeModal);
+    const existingScore = existing?.score;
+    const hasNumericScore = typeof existingScore === 'number'
+      && existingScore >= 0
+      && existingScore <= 100
+      && (existingScore > 4 || existingScore === 0);
+    setNumericScoreInput(hasNumericScore ? String(existingScore) : '');
+  }, [gradeModal, profile.grades]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, event => {
+      setKeyboardOffset(event?.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOffset(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const gradeTranslateY = useSharedValue(0);
+
+  const closeGradeModal = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setGradeModal(null);
+    gradeTranslateY.value = 0;
+  }, []);
+
+  const gradePan = useMemo(() => Gesture.Pan()
+    .minDistance(2)
+    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
+    .onUpdate((e) => {
+      if (e.translationY > 0) {
+        gradeTranslateY.value = e.translationY;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 500) {
+        runOnJS(closeGradeModal)();
+      } else {
+        gradeTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+      }
+    }), [closeGradeModal]);
+
+  const gradeModalStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: gradeTranslateY.value }],
+  }));
+
+  const translateY = useSharedValue(0);
+
+  const closeModal = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowManage(false);
+    // Reset translateY after close (will be handled by effect or next open)
+    translateY.value = 0;
+  }, []);
+
+  const managePan = useMemo(() => Gesture.Pan()
+    .minDistance(2)
+    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
+    .onUpdate((e) => {
+      if (e.translationY > 0) {
+        translateY.value = e.translationY;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 500) {
+        runOnJS(closeModal)();
+      } else {
+        translateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+      }
+    }), [closeModal]);
+
+  const modalStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const renderManageItem = useCallback(({ item: course }: { item: typeof courses[0] }) => {
+    const status = getCourseStatus(course.id);
+    return (
+      <View style={styles.manageCourseRow}>
+        <View style={styles.manageCourseInfo}>
+          <Text style={styles.manageCourseCode}>{course.code}</Text>
+          <Text style={styles.manageCourseTitle} numberOfLines={1}>{course.title}</Text>
+        </View>
+        <View style={styles.manageBtns}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              toggleCourseInProgress(course.id);
+            }}
+            style={[styles.manageStatusBtn,
+            status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '30' }
+            ]}
+          >
+            <Ionicons
+              name="time"
+              size={14}
+              color={status === 'in_progress' ? Colors.courseInProgress : Colors.textMuted}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              toggleCourseCompleted(course.id);
+            }}
+            style={[styles.manageStatusBtn,
+            status === 'completed' && { backgroundColor: Colors.courseCompleted + '30' }
+            ]}
+          >
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color={status === 'completed' ? Colors.courseCompleted : Colors.textMuted}
+            />
+          </Pressable>
+        </View>
+      </View>
+    );
+  }, [getCourseStatus, toggleCourseInProgress, toggleCourseCompleted]);
+
+  const handleScoreChange = (value: string) => {
+    const cleaned = value.replace(/[^0-9]/g, '');
+    if (!cleaned) {
+      setNumericScoreInput('');
+      return;
+    }
+    const numeric = Math.min(100, Math.max(0, parseInt(cleaned, 10)));
+    setNumericScoreInput(String(numeric));
+  };
+
+  const existingGrade = gradeModal
+    ? profile.grades.find(g => g.courseId === gradeModal)
+    : undefined;
+  const numericScoreValue = numericScoreInput.trim() === '' ? null : Number(numericScoreInput);
+  const isValidScore = numericScoreValue !== null
+    && Number.isFinite(numericScoreValue)
+    && numericScoreValue >= 0
+    && numericScoreValue <= 100;
+  const letterGrade = isValidScore && numericScoreValue !== null
+    ? scoreToLetterGrade(numericScoreValue)
+    : (existingGrade?.grade ?? '--');
 
   if (isLoading) {
     return (
@@ -341,31 +488,66 @@ export default function ToolsScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={!!gradeModal} animationType="slide" transparent onRequestClose={() => setGradeModal(null)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setGradeModal(null)}>
-          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHandle} />
+      <Modal visible={!!gradeModal} animationType="fade" transparent onRequestClose={() => setGradeModal(null)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setGradeModal(null)} />
+          <Animated.View style={[styles.modalSheet, keyboardOffset > 0 && { marginBottom: keyboardOffset }, gradeModalStyle]}>
+            <GestureDetector gesture={gradePan}>
+              <Animated.View style={styles.modalHandleHitArea}>
+                <View style={styles.modalHandle} />
+              </Animated.View>
+            </GestureDetector>
             {gradeModal && (
               <>
                 <Text style={styles.modalTitle}>{courseMap.get(gradeModal)?.code}</Text>
                 <Text style={styles.modalSubtitle}>{courseMap.get(gradeModal)?.title}</Text>
-                <View style={styles.gradeGrid}>
-                  {GRADE_OPTIONS.map(g => {
-                    const existing = profile.grades.find(gr => gr.courseId === gradeModal);
-                    return (
-                      <GradeButton
-                        key={g}
-                        grade={g}
-                        selected={existing?.grade === g}
-                        onPress={() => {
-                          setGrade(gradeModal!, g, GRADE_POINTS[g]);
-                          setGradeModal(null);
-                        }}
-                      />
-                    );
-                  })}
+                <View style={styles.scoreInputSection}>
+                  <Text style={styles.scoreInputLabel}>Numeric Score (0-100)</Text>
+                  <TextInput
+                    style={styles.scoreInput}
+                    value={numericScoreInput}
+                    onChangeText={handleScoreChange}
+                    keyboardType="numeric"
+                    placeholder="0-100"
+                    placeholderTextColor={Colors.textMuted}
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      if (!isValidScore || numericScoreValue === null) return;
+                      setGrade(gradeModal!, letterGrade, numericScoreValue);
+                      setGradeModal(null);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    }}
+                  />
                 </View>
-                {profile.grades.find(g => g.courseId === gradeModal) && (
+                <View style={styles.gradePreviewRow}>
+                  <View style={styles.gradePreviewItem}>
+                    <Text style={styles.gradePreviewLabel}>Score</Text>
+                    <Text style={styles.gradePreviewValue}>
+                      {isValidScore && numericScoreValue !== null ? numericScoreValue : '--'}
+                    </Text>
+                  </View>
+                  <View style={styles.gradePreviewItem}>
+                    <Text style={styles.gradePreviewLabel}>Letter Grade</Text>
+                    <View style={styles.gradePreviewBadge}>
+                      <Text style={styles.gradePreviewText}>{letterGrade}</Text>
+                    </View>
+                  </View>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    if (!isValidScore || numericScoreValue === null) return;
+                    setGrade(gradeModal!, letterGrade, numericScoreValue);
+                    setGradeModal(null);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }}
+                  style={[styles.saveGradeBtn, !isValidScore && styles.saveGradeBtnDisabled]}
+                  disabled={!isValidScore}
+                >
+                  <Text style={[styles.saveGradeText, !isValidScore && styles.saveGradeTextDisabled]}>
+                    Save Grade
+                  </Text>
+                </Pressable>
+                {existingGrade && (
                   <Pressable
                     onPress={() => {
                       removeGrade(gradeModal!);
@@ -378,74 +560,44 @@ export default function ToolsScreen() {
                 )}
               </>
             )}
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
-      <Modal visible={showManage} animationType="slide" transparent onRequestClose={() => setShowManage(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowManage(false)}>
-          <Pressable style={styles.modalSheetTall} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHandle} />
+      <Modal visible={showManage} animationType="fade" transparent onRequestClose={() => setShowManage(false)}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowManage(false)} />
+          <Animated.View style={[styles.modalSheetTall, modalStyle]}>
+            <GestureDetector gesture={managePan}>
+              <Animated.View style={styles.modalHandleHitArea}>
+                <View style={styles.modalHandle} />
+              </Animated.View>
+            </GestureDetector>
             <Text style={styles.modalTitle}>Manage Courses</Text>
             <Text style={styles.modalSubtitle}>Toggle course status</Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {courses.map(course => {
-                const status = getCourseStatus(course.id);
-                return (
-                  <View key={course.id} style={styles.manageCourseRow}>
-                    <View style={styles.manageCourseInfo}>
-                      <Text style={styles.manageCourseCode}>{course.code}</Text>
-                      <Text style={styles.manageCourseTitle} numberOfLines={1}>{course.title}</Text>
-                    </View>
-                    <View style={styles.manageBtns}>
-                      <Pressable
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          toggleCourseInProgress(course.id);
-                        }}
-                        style={[styles.manageStatusBtn,
-                          status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '30' }
-                        ]}
-                      >
-                        <Ionicons
-                          name="time"
-                          size={14}
-                          color={status === 'in_progress' ? Colors.courseInProgress : Colors.textMuted}
-                        />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          toggleCourseCompleted(course.id);
-                        }}
-                        style={[styles.manageStatusBtn,
-                          status === 'completed' && { backgroundColor: Colors.courseCompleted + '30' }
-                        ]}
-                      >
-                        <Ionicons
-                          name="checkmark"
-                          size={14}
-                          color={status === 'completed' ? Colors.courseCompleted : Colors.textMuted}
-                        />
-                      </Pressable>
-                    </View>
-                  </View>
-                );
-              })}
-              <Pressable
-                onPress={() => {
-                  resetProfile();
-                  setShowManage(false);
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                }}
-                style={styles.resetBtn}
-              >
-                <Ionicons name="refresh" size={16} color={Colors.danger} />
-                <Text style={styles.resetText}>Reset All Progress</Text>
-              </Pressable>
-            </ScrollView>
-          </Pressable>
-        </Pressable>
+
+            <FlatList
+              data={courses}
+              renderItem={renderManageItem}
+              keyExtractor={item => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              ListFooterComponent={() => (
+                <Pressable
+                  onPress={() => {
+                    resetProfile();
+                    setShowManage(false);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                  }}
+                  style={styles.resetBtn}
+                >
+                  <Ionicons name="refresh" size={16} color={Colors.danger} />
+                  <Text style={styles.resetText}>Reset All Progress</Text>
+                </Pressable>
+              )}
+            />
+          </Animated.View>
+        </View>
       </Modal>
     </View>
   );
@@ -737,6 +889,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+    position: 'relative',
   },
   modalSheet: {
     backgroundColor: Colors.backgroundSecondary,
@@ -751,14 +904,21 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '85%',
+    height: '85%',
+  },
+  modalHandleHitArea: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 24,
+    marginBottom: 12,
+    backgroundColor: 'transparent',
   },
   modalHandle: {
     width: 36,
     height: 4,
     borderRadius: 2,
     backgroundColor: Colors.cardBorder,
-    alignSelf: 'center',
-    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,
@@ -772,32 +932,83 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     marginBottom: 16,
   },
-  gradeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  scoreInputSection: {
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  gradeBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
+  scoreInputLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+  },
+  scoreInput: {
     backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: Colors.text,
+    fontFamily: 'Inter_600SemiBold',
     borderWidth: 1,
     borderColor: Colors.cardBorder,
   },
-  gradeBtnSelected: {
-    backgroundColor: Colors.primary + '25',
-    borderColor: Colors.primary,
+  gradePreviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 16,
   },
-  gradeBtnText: {
+  gradePreviewItem: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  gradePreviewLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 6,
+  },
+  gradePreviewValue: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+  },
+  gradePreviewBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: Colors.primary + '20',
+  },
+  gradePreviewText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    fontFamily: 'Inter_700Bold',
+  },
+  saveGradeBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    marginBottom: 8,
+  },
+  saveGradeBtnDisabled: {
+    backgroundColor: Colors.cardBorder,
+  },
+  saveGradeText: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: Colors.backgroundSecondary,
     fontFamily: 'Inter_600SemiBold',
   },
-  gradeBtnTextSelected: {
-    color: Colors.primary,
+  saveGradeTextDisabled: {
+    color: Colors.textMuted,
   },
   removeGradeBtn: {
     alignItems: 'center',

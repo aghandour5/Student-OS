@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
   ActivityIndicator, Modal, FlatList, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
@@ -25,6 +27,8 @@ export default function PlannerScreen() {
   const [showAddCourse, setShowAddCourse] = useState<string | null>(null);
   const [expandedSemester, setExpandedSemester] = useState<string | null>(null);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
+  const newSemesterTranslateY = useSharedValue(0);
+  const addCourseTranslateY = useSharedValue(0);
 
   const courseMap = useMemo(() => {
     const map = new Map<string, CourseWithPrereqs>();
@@ -90,6 +94,68 @@ export default function PlannerScreen() {
     setExpandedSemester(id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
+
+  const closeNewSemester = useCallback(() => {
+    setShowNewSemester(false);
+    newSemesterTranslateY.value = 0;
+  }, [newSemesterTranslateY]);
+
+  const closeAddCourse = useCallback(() => {
+    setShowAddCourse(null);
+    addCourseTranslateY.value = 0;
+  }, [addCourseTranslateY]);
+
+  useEffect(() => {
+    if (!showNewSemester) {
+      newSemesterTranslateY.value = 0;
+    }
+  }, [showNewSemester, newSemesterTranslateY]);
+
+  useEffect(() => {
+    if (!showAddCourse) {
+      addCourseTranslateY.value = 0;
+    }
+  }, [showAddCourse, addCourseTranslateY]);
+
+  const newSemesterPan = useMemo(() => Gesture.Pan()
+    .minDistance(2)
+    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
+    .onUpdate((e) => {
+      if (e.translationY > 0) {
+        newSemesterTranslateY.value = e.translationY;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 500) {
+        runOnJS(closeNewSemester)();
+      } else {
+        newSemesterTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+      }
+    }), [closeNewSemester, newSemesterTranslateY]);
+
+  const addCoursePan = useMemo(() => Gesture.Pan()
+    .minDistance(2)
+    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
+    .onUpdate((e) => {
+      if (e.translationY > 0) {
+        addCourseTranslateY.value = e.translationY;
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationY > 100 || e.velocityY > 500) {
+        runOnJS(closeAddCourse)();
+      } else {
+        addCourseTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
+      }
+    }), [addCourseTranslateY, closeAddCourse]);
+
+  const newSemesterStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: newSemesterTranslateY.value }],
+  }));
+
+  const addCourseStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: addCourseTranslateY.value }],
+  }));
 
   const handleRemoveSemester = (planId: string) => {
     Alert.alert(
@@ -278,10 +344,15 @@ export default function PlannerScreen() {
         })}
       </ScrollView>
 
-      <Modal visible={showNewSemester} animationType="slide" transparent onRequestClose={() => setShowNewSemester(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowNewSemester(false)}>
-          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHandle} />
+      <Modal visible={showNewSemester} animationType="slide" transparent onRequestClose={closeNewSemester}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeNewSemester} />
+          <Animated.View style={[styles.modalSheet, newSemesterStyle]}>
+            <GestureDetector gesture={newSemesterPan}>
+              <Animated.View style={styles.modalHandleHitArea}>
+                <View style={styles.modalHandle} />
+              </Animated.View>
+            </GestureDetector>
             <Text style={styles.modalTitle}>New Semester</Text>
             <Text style={styles.modalSubtitle}>Choose a semester to plan</Text>
             {[2024, 2025, 2026, 2027, 2028].map(year => (
@@ -312,14 +383,19 @@ export default function PlannerScreen() {
                 </View>
               </View>
             ))}
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
-      <Modal visible={!!showAddCourse} animationType="slide" transparent onRequestClose={() => setShowAddCourse(null)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAddCourse(null)}>
-          <Pressable style={styles.modalSheetTall} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHandle} />
+      <Modal visible={!!showAddCourse} animationType="slide" transparent onRequestClose={closeAddCourse}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeAddCourse} />
+          <Animated.View style={[styles.modalSheetTall, addCourseStyle]}>
+            <GestureDetector gesture={addCoursePan}>
+              <Animated.View style={styles.modalHandleHitArea}>
+                <View style={styles.modalHandle} />
+              </Animated.View>
+            </GestureDetector>
             <Text style={styles.modalTitle}>Add Course</Text>
             {showAddCourse && (
               <FlatList
@@ -356,8 +432,8 @@ export default function PlannerScreen() {
                 }}
               />
             )}
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
     </View>
   );
@@ -578,13 +654,19 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: '85%',
   },
+  modalHandleHitArea: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 24,
+    marginBottom: 16,
+  },
   modalHandle: {
     width: 36,
     height: 4,
     borderRadius: 2,
     backgroundColor: Colors.cardBorder,
     alignSelf: 'center',
-    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,

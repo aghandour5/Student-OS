@@ -5,6 +5,8 @@ import {
   type CourseWithPrereqs, type SemesterPlan, type UserGrade, type UserProfile,
   GRADE_POINTS
 } from '@shared/schema';
+import { offlineCourses } from './offline-data';
+import { getApiUrl } from './query-client';
 
 const STORAGE_KEY = '@uniflow_user_profile';
 
@@ -24,6 +26,7 @@ interface AcademicContextValue {
   profile: UserProfile;
   courses: CourseWithPrereqs[];
   isLoading: boolean;
+  isOnline: boolean;
   getCourseStatus: (courseId: string) => CourseStatus;
   getPrerequisitesFor: (courseId: string) => CourseWithPrereqs[];
   getUnlockedBy: (courseId: string) => CourseWithPrereqs[];
@@ -50,10 +53,43 @@ const AcademicContext = createContext<AcademicContextValue | null>(null);
 export function AcademicProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [loaded, setLoaded] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
 
-  const { data: courses = [], isLoading: coursesLoading } = useQuery<CourseWithPrereqs[]>({
+  // Check if server is available
+  const serverUrl = getApiUrl();
+  const { data: serverCourses, isLoading: serverLoading } = useQuery<CourseWithPrereqs[]>({
     queryKey: ['/api/courses'],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      if (!baseUrl) {
+        throw new Error('Server not available');
+      }
+      const res = await fetch(`${baseUrl}/api/courses`);
+      if (!res.ok) throw new Error('Failed to fetch courses');
+      return res.json();
+    },
+    enabled: !!serverUrl, // Only run if server URL is configured
+    retry: 1,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
+
+  // Use server courses if available, otherwise fall back to offline data
+  const courses = serverCourses ?? offlineCourses;
+  // Only show loading if we're actually trying to fetch from server
+  const coursesLoading = serverUrl && serverLoading && !offlineCourses.length;
+
+  // Update isOnline status based on server availability
+  useEffect(() => {
+    if (serverCourses !== undefined) {
+      setIsOnline(true);
+    } else if (serverUrl !== null) {
+      // Server was configured but fetch failed or not yet complete
+      setIsOnline(false);
+    } else {
+      // No server configured (offline mode)
+      setIsOnline(false);
+    }
+  }, [serverCourses, serverUrl]);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(stored => {
@@ -158,8 +194,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         ...prev.grades.filter(g => g.courseId !== courseId),
         { courseId, grade, score },
       ],
-      completedCourses: prev.completedCourses.includes(courseId) 
-        ? prev.completedCourses 
+      completedCourses: prev.completedCourses.includes(courseId)
+        ? prev.completedCourses
         : [...prev.completedCourses, courseId],
       inProgressCourses: prev.inProgressCourses.filter(id => id !== courseId),
     }));
@@ -262,6 +298,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     profile,
     courses,
     isLoading: coursesLoading || !loaded,
+    isOnline,
     getCourseStatus,
     getPrerequisitesFor,
     getUnlockedBy,
@@ -282,7 +319,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     inProgressCredits,
     resetProfile,
   }), [
-    profile, courses, coursesLoading, loaded,
+    profile, courses, coursesLoading, loaded, isOnline,
     getCourseStatus, getPrerequisitesFor, getUnlockedBy, arePrereqsMet, getMissingPrereqs,
     toggleCourseCompleted, toggleCourseInProgress,
     setGrade, removeGrade,
@@ -305,3 +342,4 @@ export function useAcademic() {
   }
   return context;
 }
+

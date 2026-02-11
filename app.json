@@ -4,7 +4,7 @@
     "slug": "uniflow",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Logo - UniFlow.png",
     "scheme": "uniflow",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -40,6 +40,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "5e764e76-7d86-4f9f-b9bc-56bcc2f43e91"
+      }
     }
   }
 }

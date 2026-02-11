@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
+import { getApiUrl } from '@/lib/query-client';
 import type { Offering } from '@shared/schema';
 
 const statusConfig = {
@@ -30,9 +31,17 @@ export default function CourseDetailScreen() {
   } = useAcademic();
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
+  // Only fetch from server if server is configured
   const { data: courseDetail } = useQuery<any>({
     queryKey: ['/api/courses', id],
-    enabled: !!id,
+    enabled: !!id && !!getApiUrl(),
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      if (!baseUrl) throw new Error('Server not available');
+      const res = await fetch(`${baseUrl}/api/courses/${id}`);
+      if (!res.ok) throw new Error('Failed to fetch course');
+      return res.json();
+    },
   });
 
   const course = useMemo(() => courses.find(c => c.id === id), [courses, id]);
@@ -123,7 +132,7 @@ export default function CourseDetailScreen() {
               toggleCourseInProgress(course.id);
             }}
             style={[styles.actionBtn,
-              status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '20', borderColor: Colors.courseInProgress }
+            status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '20', borderColor: Colors.courseInProgress }
             ]}
           >
             <Ionicons
@@ -132,7 +141,7 @@ export default function CourseDetailScreen() {
               color={status === 'in_progress' ? Colors.courseInProgress : Colors.textSecondary}
             />
             <Text style={[styles.actionBtnText,
-              status === 'in_progress' && { color: Colors.courseInProgress }
+            status === 'in_progress' && { color: Colors.courseInProgress }
             ]}>In Progress</Text>
           </Pressable>
           <Pressable
@@ -141,7 +150,7 @@ export default function CourseDetailScreen() {
               toggleCourseCompleted(course.id);
             }}
             style={[styles.actionBtn,
-              status === 'completed' && { backgroundColor: Colors.courseCompleted + '20', borderColor: Colors.courseCompleted }
+            status === 'completed' && { backgroundColor: Colors.courseCompleted + '20', borderColor: Colors.courseCompleted }
             ]}
           >
             <Ionicons
@@ -150,7 +159,7 @@ export default function CourseDetailScreen() {
               color={status === 'completed' ? Colors.courseCompleted : Colors.textSecondary}
             />
             <Text style={[styles.actionBtnText,
-              status === 'completed' && { color: Colors.courseCompleted }
+            status === 'completed' && { color: Colors.courseCompleted }
             ]}>Completed</Text>
           </Pressable>
         </View>

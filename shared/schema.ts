@@ -92,4 +92,20 @@ export const GRADE_POINTS: Record<string, number> = {
   'F': 0.0,
 };
 
+export const getLetterGrade = (score: number): string => {
+  const normalized = Math.max(0, Math.min(100, score));
+  if (normalized >= 93) return 'A';
+  if (normalized >= 90) return 'A-';
+  if (normalized >= 87) return 'B+';
+  if (normalized >= 83) return 'B';
+  if (normalized >= 80) return 'B-';
+  if (normalized >= 77) return 'C+';
+  if (normalized >= 73) return 'C';
+  if (normalized >= 70) return 'C-';
+  if (normalized >= 67) return 'D+';
+  if (normalized >= 63) return 'D';
+  if (normalized >= 60) return 'D-';
+  return 'F';
+};
+
 export const GRADE_OPTIONS = Object.keys(GRADE_POINTS);

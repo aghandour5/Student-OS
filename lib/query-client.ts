@@ -3,13 +3,14 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
- * @returns {string} The API base URL
+ * @returns {string | null} The API base URL, or null if offline mode
  */
-export function getApiUrl(): string {
+export function getApiUrl(): string | null {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+    // Offline mode - no server configured
+    return null;
   }
 
   let url = new URL(`https://${host}`);
@@ -30,6 +31,11 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   const baseUrl = getApiUrl();
+
+  if (!baseUrl) {
+    throw new Error("Cannot make API request in offline mode");
+  }
+
   const url = new URL(route, baseUrl);
 
   const res = await fetch(url.toString(), {
@@ -48,21 +54,26 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const baseUrl = getApiUrl();
-    const url = new URL(queryKey.join("/") as string, baseUrl);
+    async ({ queryKey }) => {
+      const baseUrl = getApiUrl();
 
-    const res = await fetch(url.toString(), {
-      credentials: "include",
-    });
+      if (!baseUrl) {
+        throw new Error("Cannot fetch from server in offline mode");
+      }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
+      const url = new URL(queryKey.join("/") as string, baseUrl);
 
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
+      const res = await fetch(url.toString(), {
+        credentials: "include",
+      });
+
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
