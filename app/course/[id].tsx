@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
+import { TermInfo } from '@/components/TermInfo';
 import { useAcademic } from '@/lib/academic-context';
 import { getApiUrl } from '@/lib/query-client';
 import type { Offering } from '@shared/schema';
@@ -52,6 +53,27 @@ export default function CourseDetailScreen() {
   const missingPrereqs = course ? getMissingPrereqs(course.id) : [];
   const offerings: Offering[] = courseDetail?.offerings || [];
   const grade = profile.grades.find(g => g.courseId === id);
+
+  const { cleanDescription, corequisites } = useMemo(() => {
+    if (!course) return { cleanDescription: '', corequisites: [] };
+
+    const parts = course.description.split(/Corequisites:\s*/);
+    if (parts.length === 1) return { cleanDescription: course.description, corequisites: [] };
+
+    const desc = parts[0].trim();
+    const coreqText = parts[1].trim();
+
+    if (coreqText === 'None.' || coreqText === 'None') {
+      return { cleanDescription: desc, corequisites: [] };
+    }
+
+    const codes = coreqText.replace(/\.$/, '').split(',').map(c => c.trim());
+    const matchedCourses = codes
+      .map(code => courses.find(c => c.code === code))
+      .filter((c): c is typeof courses[0] => !!c);
+
+    return { cleanDescription: desc, corequisites: matchedCourses };
+  }, [course, courses]);
 
   if (!course) {
     return (
@@ -107,6 +129,7 @@ export default function CourseDetailScreen() {
             <View style={styles.metaItem}>
               <MaterialCommunityIcons name="school" size={16} color={Colors.textSecondary} />
               <Text style={styles.metaText}>{course.credits} Credits</Text>
+              <TermInfo term="Credits" size={14} />
             </View>
             <View style={styles.metaItem}>
               <Ionicons name="folder-outline" size={16} color={Colors.textSecondary} />
@@ -128,7 +151,7 @@ export default function CourseDetailScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{course.description}</Text>
+          <Text style={styles.description}>{cleanDescription}</Text>
         </View>
 
         <View style={styles.actionRow}>
@@ -172,8 +195,11 @@ export default function CourseDetailScreen() {
 
         {prereqs.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Prerequisites</Text>
-            {prereqs.map(prereq => {
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Prerequisites</Text>
+              <TermInfo term="Prerequisites" />
+            </View>
+            {prereqs.map((prereq: any) => {
               const pStatus = getCourseStatus(prereq.id);
               const isMissing = missingPrereqs.some(m => m.id === prereq.id);
               return (
@@ -207,9 +233,44 @@ export default function CourseDetailScreen() {
           </View>
         )}
 
+        {corequisites.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Corequisites</Text>
+              <TermInfo term="Corequisites" />
+            </View>
+            {corequisites.map(coreq => {
+              const cStatus = getCourseStatus(coreq.id);
+              return (
+                <Pressable
+                  key={coreq.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push({ pathname: '/course/[id]', params: { id: coreq.id } });
+                  }}
+                  style={styles.prereqCard}
+                >
+                  <View style={[styles.prereqDot, {
+                    backgroundColor: cStatus === 'completed' ? Colors.courseCompleted :
+                      cStatus === 'in_progress' ? Colors.courseInProgress : Colors.courseLocked
+                  }]} />
+                  <View style={styles.prereqInfo}>
+                    <Text style={styles.prereqCode}>{coreq.code}</Text>
+                    <Text style={styles.prereqTitle}>{coreq.title}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
         {unlocks.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Unlocks</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Unlocks</Text>
+              <TermInfo term="Unlocks" />
+            </View>
             <Text style={styles.sectionSubtitle}>
               Completing this course enables {unlocks.length} more course{unlocks.length > 1 ? 's' : ''}
             </Text>
@@ -401,12 +462,16 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600' as const,
     color: Colors.text,
     fontFamily: 'Inter_600SemiBold',
-    marginBottom: 8,
   },
   sectionSubtitle: {
     fontSize: 12,

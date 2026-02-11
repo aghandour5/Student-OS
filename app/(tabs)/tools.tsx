@@ -12,6 +12,7 @@ import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
 import { GRADE_POINTS, getLetterGrade } from '@shared/schema';
 import { BottomSheet } from '@/components/BottomSheet';
+import { TermInfo } from '@/components/TermInfo';
 
 const clampScore = (score: number) => Math.max(0, Math.min(100, score));
 const scoreToLetterGrade = (score: number) => getLetterGrade(clampScore(score));
@@ -256,7 +257,10 @@ export default function ToolsScreen() {
           <>
             <View style={styles.gpaDisplay}>
               <Text style={styles.gpaValue}>{gpa > 0 ? gpa.toFixed(2) : '--'}</Text>
-              <Text style={styles.gpaLabel}>Cumulative GPA</Text>
+              <View style={styles.gpaLabelRow}>
+                <Text style={styles.gpaLabel}>Cumulative GPA</Text>
+                <TermInfo term="Cumulative GPA" size={14} />
+              </View>
               {targetGPAResult && (
                 <View style={styles.targetCard}>
                   <Ionicons name="flag" size={14} color={Colors.warning} />
@@ -618,6 +622,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
+    marginTop: 0,
+  },
+  gpaLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
   },
   targetCard: {

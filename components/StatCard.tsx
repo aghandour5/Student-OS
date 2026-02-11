@@ -19,7 +19,7 @@ export function StatCard({ icon, iconColor = Colors.primary, label, value, subti
         <Ionicons name={icon as any} size={small ? 18 : 22} color={iconColor} />
       </View>
       <Text style={[styles.value, small && styles.smallValue]}>{value}</Text>
-      <Text style={[styles.label, small && styles.smallLabel]}>{label}</Text>
+      <Text style={[styles.label, small && styles.smallLabel]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );

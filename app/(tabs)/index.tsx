@@ -14,6 +14,8 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
 import type { CourseWithPrereqs } from '@shared/schema';
 
+import { TermInfo } from '@/components/TermInfo';
+
 function OfflineBanner({ topInset }: { topInset: number }) {
   return (
     <View style={[styles.offlineBanner, { paddingTop: topInset + 8 }]}>
@@ -211,7 +213,10 @@ export default function DashboardScreen() {
               sublabel="Complete"
             />
             <View style={styles.gpaInfo}>
-              <Text style={styles.gpaLabel}>Cumulative GPA</Text>
+              <View style={styles.gpaLabelRow}>
+                <Text style={styles.gpaLabel}>Cumulative GPA</Text>
+                <TermInfo term="Cumulative GPA" size={14} />
+              </View>
               <Text style={[styles.gpaValue, { color: gpa > 0 ? getGPAColor(gpa) : Colors.textSecondary }]}>
                 {gpa > 0 ? gpa.toFixed(2) : '--'}
               </Text>
@@ -537,6 +542,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
+  },
+  gpaLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
   gpaValue: {
