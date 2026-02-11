@@ -1,16 +1,17 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  ActivityIndicator, TextInput, Modal, Keyboard, FlatList
+  ActivityIndicator, TextInput, Modal, FlatList
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS, SlideInDown, SlideOutDown, FadeIn, FadeOut } from 'react-native-reanimated';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
 import { GRADE_POINTS, getLetterGrade } from '@shared/schema';
+import { BottomSheet } from '@/components/BottomSheet';
 
 const clampScore = (score: number) => Math.max(0, Math.min(100, score));
 const scoreToLetterGrade = (score: number) => getLetterGrade(clampScore(score));
@@ -32,7 +33,6 @@ export default function ToolsScreen() {
   const [projScores, setProjScores] = useState({ quizzes: '', midterm: '', final: '' });
   const [gradeModal, setGradeModal] = useState<string | null>(null);
   const [numericScoreInput, setNumericScoreInput] = useState('');
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showManage, setShowManage] = useState(false);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
@@ -117,77 +117,17 @@ export default function ToolsScreen() {
     setNumericScoreInput(hasNumericScore ? String(existingScore) : '');
   }, [gradeModal, profile.grades]);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, event => {
-      setKeyboardOffset(event?.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardOffset(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
-  const gradeTranslateY = useSharedValue(0);
 
   const closeGradeModal = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setGradeModal(null);
-    gradeTranslateY.value = 0;
   }, []);
-
-  const gradePan = useMemo(() => Gesture.Pan()
-    .minDistance(2)
-    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
-    .onUpdate((e) => {
-      if (e.translationY > 0) {
-        gradeTranslateY.value = e.translationY;
-      }
-    })
-    .onEnd((e) => {
-      if (e.translationY > 100 || e.velocityY > 500) {
-        runOnJS(closeGradeModal)();
-      } else {
-        gradeTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
-      }
-    }), [closeGradeModal]);
-
-  const gradeModalStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: gradeTranslateY.value }],
-  }));
-
-  const translateY = useSharedValue(0);
 
   const closeModal = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowManage(false);
-    // Reset translateY after close (will be handled by effect or next open)
-    translateY.value = 0;
   }, []);
-
-  const managePan = useMemo(() => Gesture.Pan()
-    .minDistance(2)
-    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
-    .onUpdate((e) => {
-      if (e.translationY > 0) {
-        translateY.value = e.translationY;
-      }
-    })
-    .onEnd((e) => {
-      if (e.translationY > 100 || e.velocityY > 500) {
-        runOnJS(closeModal)();
-      } else {
-        translateY.value = withSpring(0, { damping: 15, stiffness: 150 });
-      }
-    }), [closeModal]);
-
-  const modalStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
 
   const renderManageItem = useCallback(({ item: course }: { item: typeof courses[0] }) => {
     const status = getCourseStatus(course.id);
@@ -488,117 +428,107 @@ export default function ToolsScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={!!gradeModal} animationType="fade" transparent onRequestClose={() => setGradeModal(null)}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setGradeModal(null)} />
-          <Animated.View style={[styles.modalSheet, keyboardOffset > 0 && { marginBottom: keyboardOffset }, gradeModalStyle]}>
-            <GestureDetector gesture={gradePan}>
-              <Animated.View style={styles.modalHandleHitArea}>
-                <View style={styles.modalHandle} />
-              </Animated.View>
-            </GestureDetector>
-            {gradeModal && (
-              <>
-                <Text style={styles.modalTitle}>{courseMap.get(gradeModal)?.code}</Text>
-                <Text style={styles.modalSubtitle}>{courseMap.get(gradeModal)?.title}</Text>
-                <View style={styles.scoreInputSection}>
-                  <Text style={styles.scoreInputLabel}>Numeric Score (0-100)</Text>
-                  <TextInput
-                    style={styles.scoreInput}
-                    value={numericScoreInput}
-                    onChangeText={handleScoreChange}
-                    keyboardType="numeric"
-                    placeholder="0-100"
-                    placeholderTextColor={Colors.textMuted}
-                    returnKeyType="done"
-                    onSubmitEditing={() => {
-                      if (!isValidScore || numericScoreValue === null) return;
-                      setGrade(gradeModal!, letterGrade, numericScoreValue);
-                      setGradeModal(null);
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    }}
-                  />
+      <BottomSheet
+        visible={!!gradeModal}
+        onClose={closeGradeModal}
+        title={courseMap.get(gradeModal!)?.code}
+        subtitle={courseMap.get(gradeModal!)?.title}
+      >
+        {gradeModal && (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+            style={{ flexGrow: 0, flexShrink: 1 }}
+          >
+            <View style={styles.scoreInputSection}>
+              <Text style={styles.scoreInputLabel}>Numeric Score (0-100)</Text>
+              <TextInput
+                style={styles.scoreInput}
+                value={numericScoreInput}
+                onChangeText={handleScoreChange}
+                keyboardType="numeric"
+                placeholder="0-100"
+                placeholderTextColor={Colors.textMuted}
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (!isValidScore || numericScoreValue === null) return;
+                  setGrade(gradeModal!, letterGrade, numericScoreValue);
+                  setGradeModal(null);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              />
+            </View>
+            <View style={styles.gradePreviewRow}>
+              <View style={styles.gradePreviewItem}>
+                <Text style={styles.gradePreviewLabel}>Score</Text>
+                <Text style={styles.gradePreviewValue}>
+                  {isValidScore && numericScoreValue !== null ? numericScoreValue : '--'}
+                </Text>
+              </View>
+              <View style={styles.gradePreviewItem}>
+                <Text style={styles.gradePreviewLabel}>Letter Grade</Text>
+                <View style={styles.gradePreviewBadge}>
+                  <Text style={styles.gradePreviewText}>{letterGrade}</Text>
                 </View>
-                <View style={styles.gradePreviewRow}>
-                  <View style={styles.gradePreviewItem}>
-                    <Text style={styles.gradePreviewLabel}>Score</Text>
-                    <Text style={styles.gradePreviewValue}>
-                      {isValidScore && numericScoreValue !== null ? numericScoreValue : '--'}
-                    </Text>
-                  </View>
-                  <View style={styles.gradePreviewItem}>
-                    <Text style={styles.gradePreviewLabel}>Letter Grade</Text>
-                    <View style={styles.gradePreviewBadge}>
-                      <Text style={styles.gradePreviewText}>{letterGrade}</Text>
-                    </View>
-                  </View>
-                </View>
-                <Pressable
-                  onPress={() => {
-                    if (!isValidScore || numericScoreValue === null) return;
-                    setGrade(gradeModal!, letterGrade, numericScoreValue);
-                    setGradeModal(null);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                  }}
-                  style={[styles.saveGradeBtn, !isValidScore && styles.saveGradeBtnDisabled]}
-                  disabled={!isValidScore}
-                >
-                  <Text style={[styles.saveGradeText, !isValidScore && styles.saveGradeTextDisabled]}>
-                    Save Grade
-                  </Text>
-                </Pressable>
-                {existingGrade && (
-                  <Pressable
-                    onPress={() => {
-                      removeGrade(gradeModal!);
-                      setGradeModal(null);
-                    }}
-                    style={styles.removeGradeBtn}
-                  >
-                    <Text style={styles.removeGradeText}>Remove Grade</Text>
-                  </Pressable>
-                )}
-              </>
+              </View>
+            </View>
+            <Pressable
+              onPress={() => {
+                if (!isValidScore || numericScoreValue === null) return;
+                setGrade(gradeModal!, letterGrade, numericScoreValue);
+                setGradeModal(null);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              }}
+              style={[styles.saveGradeBtn, !isValidScore && styles.saveGradeBtnDisabled]}
+              disabled={!isValidScore}
+            >
+              <Text style={[styles.saveGradeText, !isValidScore && styles.saveGradeTextDisabled]}>
+                Save Grade
+              </Text>
+            </Pressable>
+            {existingGrade && (
+              <Pressable
+                onPress={() => {
+                  removeGrade(gradeModal!);
+                  setGradeModal(null);
+                }}
+                style={styles.removeGradeBtn}
+              >
+                <Text style={styles.removeGradeText}>Remove Grade</Text>
+              </Pressable>
             )}
-          </Animated.View>
-        </View>
-      </Modal>
+          </ScrollView>
+        )}
+      </BottomSheet>
 
-      <Modal visible={showManage} animationType="fade" transparent onRequestClose={() => setShowManage(false)}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowManage(false)} />
-          <Animated.View style={[styles.modalSheetTall, modalStyle]}>
-            <GestureDetector gesture={managePan}>
-              <Animated.View style={styles.modalHandleHitArea}>
-                <View style={styles.modalHandle} />
-              </Animated.View>
-            </GestureDetector>
-            <Text style={styles.modalTitle}>Manage Courses</Text>
-            <Text style={styles.modalSubtitle}>Toggle course status</Text>
-
-            <FlatList
-              data={courses}
-              renderItem={renderManageItem}
-              keyExtractor={item => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              ListFooterComponent={() => (
-                <Pressable
-                  onPress={() => {
-                    resetProfile();
-                    setShowManage(false);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                  }}
-                  style={styles.resetBtn}
-                >
-                  <Ionicons name="refresh" size={16} color={Colors.danger} />
-                  <Text style={styles.resetText}>Reset All Progress</Text>
-                </Pressable>
-              )}
-            />
-          </Animated.View>
-        </View>
-      </Modal>
+      <BottomSheet
+        visible={showManage}
+        onClose={closeModal}
+        title="Manage Courses"
+        subtitle="Toggle course status"
+      >
+        <FlatList
+          data={courses}
+          renderItem={renderManageItem}
+          keyExtractor={item => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          style={{ flexGrow: 1, maxHeight: '95%' }} // Grow but leave small room for footer
+          ListFooterComponent={() => (
+            <Pressable
+              onPress={() => {
+                resetProfile();
+                setShowManage(false);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              }}
+              style={styles.resetBtn}
+            >
+              <Ionicons name="refresh" size={16} color={Colors.danger} />
+              <Text style={styles.resetText}>Reset All Progress</Text>
+            </Pressable>
+          )}
+        />
+      </BottomSheet>
     </View>
   );
 }

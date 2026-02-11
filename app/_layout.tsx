@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
+import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -64,7 +65,15 @@ export default function RootLayout() {
           <KeyboardProvider>
             <AcademicProvider>
               <StatusBar style="light" />
-              <RootLayoutNav />
+              <ThemeProvider value={{
+                ...DarkTheme,
+                colors: {
+                  ...DarkTheme.colors,
+                  background: Colors.background,
+                },
+              }}>
+                <RootLayoutNav />
+              </ThemeProvider>
             </AcademicProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>

@@ -5,14 +5,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Animated from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
 import type { SemesterPlan, CourseWithPrereqs } from '@shared/schema';
+import { BottomSheet } from '@/components/BottomSheet';
 
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
@@ -27,8 +28,6 @@ export default function PlannerScreen() {
   const [showAddCourse, setShowAddCourse] = useState<string | null>(null);
   const [expandedSemester, setExpandedSemester] = useState<string | null>(null);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
-  const newSemesterTranslateY = useSharedValue(0);
-  const addCourseTranslateY = useSharedValue(0);
 
   const courseMap = useMemo(() => {
     const map = new Map<string, CourseWithPrereqs>();
@@ -97,65 +96,13 @@ export default function PlannerScreen() {
 
   const closeNewSemester = useCallback(() => {
     setShowNewSemester(false);
-    newSemesterTranslateY.value = 0;
-  }, [newSemesterTranslateY]);
+  }, []);
 
   const closeAddCourse = useCallback(() => {
     setShowAddCourse(null);
-    addCourseTranslateY.value = 0;
-  }, [addCourseTranslateY]);
+  }, []);
 
-  useEffect(() => {
-    if (!showNewSemester) {
-      newSemesterTranslateY.value = 0;
-    }
-  }, [showNewSemester, newSemesterTranslateY]);
 
-  useEffect(() => {
-    if (!showAddCourse) {
-      addCourseTranslateY.value = 0;
-    }
-  }, [showAddCourse, addCourseTranslateY]);
-
-  const newSemesterPan = useMemo(() => Gesture.Pan()
-    .minDistance(2)
-    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
-    .onUpdate((e) => {
-      if (e.translationY > 0) {
-        newSemesterTranslateY.value = e.translationY;
-      }
-    })
-    .onEnd((e) => {
-      if (e.translationY > 100 || e.velocityY > 500) {
-        runOnJS(closeNewSemester)();
-      } else {
-        newSemesterTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
-      }
-    }), [closeNewSemester, newSemesterTranslateY]);
-
-  const addCoursePan = useMemo(() => Gesture.Pan()
-    .minDistance(2)
-    .hitSlop({ top: 12, bottom: 12, left: 24, right: 24 })
-    .onUpdate((e) => {
-      if (e.translationY > 0) {
-        addCourseTranslateY.value = e.translationY;
-      }
-    })
-    .onEnd((e) => {
-      if (e.translationY > 100 || e.velocityY > 500) {
-        runOnJS(closeAddCourse)();
-      } else {
-        addCourseTranslateY.value = withSpring(0, { damping: 15, stiffness: 150 });
-      }
-    }), [addCourseTranslateY, closeAddCourse]);
-
-  const newSemesterStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: newSemesterTranslateY.value }],
-  }));
-
-  const addCourseStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: addCourseTranslateY.value }],
-  }));
 
   const handleRemoveSemester = (planId: string) => {
     Alert.alert(
@@ -344,97 +291,90 @@ export default function PlannerScreen() {
         })}
       </ScrollView>
 
-      <Modal visible={showNewSemester} animationType="slide" transparent onRequestClose={closeNewSemester}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={closeNewSemester} />
-          <Animated.View style={[styles.modalSheet, newSemesterStyle]}>
-            <GestureDetector gesture={newSemesterPan}>
-              <Animated.View style={styles.modalHandleHitArea}>
-                <View style={styles.modalHandle} />
-              </Animated.View>
-            </GestureDetector>
-            <Text style={styles.modalTitle}>New Semester</Text>
-            <Text style={styles.modalSubtitle}>Choose a semester to plan</Text>
-            {[2024, 2025, 2026, 2027, 2028].map(year => (
-              <View key={year}>
-                <Text style={styles.yearLabel}>{year}</Text>
-                <View style={styles.seasonRow}>
-                  {(['Fall', 'Spring', 'Summer'] as const).map(season => {
-                    const exists = profile.semesterPlans.some(p => p.season === season && p.year === year);
-                    return (
-                      <Pressable
-                        key={`${season}-${year}`}
-                        onPress={() => !exists && handleCreateSemester(season, year)}
-                        style={[styles.seasonBtn, exists && styles.seasonBtnDisabled]}
-                        disabled={exists}
-                      >
-                        <Ionicons
-                          name={season === 'Fall' ? 'leaf' : season === 'Spring' ? 'flower' : 'sunny'}
-                          size={18}
-                          color={exists ? Colors.textMuted : season === 'Fall' ? '#F59E0B' :
-                            season === 'Spring' ? '#10B981' : '#EF4444'}
-                        />
-                        <Text style={[styles.seasonBtnText, exists && styles.seasonBtnTextDisabled]}>
-                          {season}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-          </Animated.View>
-        </View>
-      </Modal>
-
-      <Modal visible={!!showAddCourse} animationType="slide" transparent onRequestClose={closeAddCourse}>
-        <View style={styles.modalOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={closeAddCourse} />
-          <Animated.View style={[styles.modalSheetTall, addCourseStyle]}>
-            <GestureDetector gesture={addCoursePan}>
-              <Animated.View style={styles.modalHandleHitArea}>
-                <View style={styles.modalHandle} />
-              </Animated.View>
-            </GestureDetector>
-            <Text style={styles.modalTitle}>Add Course</Text>
-            {showAddCourse && (
-              <FlatList
-                data={getAvailableForSemester(profile.semesterPlans.find(p => p.id === showAddCourse)!)}
-                keyExtractor={item => item.id}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                renderItem={({ item }) => {
-                  const met = arePrereqsMet(item.id) || profile.completedCourses.includes(item.id);
+      <BottomSheet
+        visible={showNewSemester}
+        onClose={closeNewSemester}
+        title="New Semester"
+        subtitle="Choose a semester to plan"
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          style={{ flexGrow: 0, flexShrink: 1 }}
+        >
+          {[2024, 2025, 2026, 2027, 2028].map(year => (
+            <View key={year}>
+              <Text style={styles.yearLabel}>{year}</Text>
+              <View style={styles.seasonRow}>
+                {(['Fall', 'Spring', 'Summer'] as const).map(season => {
+                  const exists = profile.semesterPlans.some(p => p.season === season && p.year === year);
                   return (
                     <Pressable
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        addCourseToSemester(showAddCourse!, item.id);
-                        setShowAddCourse(null);
-                      }}
-                      style={[styles.addCourseItem, !met && styles.addCourseItemLocked]}
+                      key={`${season}-${year}`}
+                      onPress={() => !exists && handleCreateSemester(season, year)}
+                      style={[styles.seasonBtn, exists && styles.seasonBtnDisabled]}
+                      disabled={exists}
                     >
-                      <View style={styles.addCourseItemLeft}>
-                        <Text style={styles.addCourseCode}>{item.code}</Text>
-                        <Text style={styles.addCourseTitle}>{item.title}</Text>
-                        {!met && (
-                          <View style={styles.lockedRow}>
-                            <Ionicons name="lock-closed" size={10} color={Colors.courseLocked} />
-                            <Text style={styles.lockedText}>Prerequisites not met</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[styles.addCourseCredits, { color: met ? Colors.primary : Colors.textMuted }]}>
-                        {item.credits}cr
+                      <Ionicons
+                        name={season === 'Fall' ? 'leaf' : season === 'Spring' ? 'flower' : 'sunny'}
+                        size={18}
+                        color={exists ? Colors.textMuted : season === 'Fall' ? '#F59E0B' :
+                          season === 'Spring' ? '#10B981' : '#EF4444'}
+                      />
+                      <Text style={[styles.seasonBtnText, exists && styles.seasonBtnTextDisabled]}>
+                        {season}
                       </Text>
                     </Pressable>
                   );
-                }}
-              />
-            )}
-          </Animated.View>
-        </View>
-      </Modal>
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={!!showAddCourse}
+        onClose={closeAddCourse}
+        title="Add Course"
+      >
+        {showAddCourse && (
+          <FlatList
+            data={getAvailableForSemester(profile.semesterPlans.find(p => p.id === showAddCourse)!)}
+            keyExtractor={item => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            style={{ maxHeight: 500, flexShrink: 1 }}
+            renderItem={({ item }) => {
+              const met = arePrereqsMet(item.id) || profile.completedCourses.includes(item.id);
+              return (
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    addCourseToSemester(showAddCourse!, item.id);
+                    setShowAddCourse(null);
+                  }}
+                  style={[styles.addCourseItem, !met && styles.addCourseItemLocked]}
+                >
+                  <View style={styles.addCourseItemLeft}>
+                    <Text style={styles.addCourseCode}>{item.code}</Text>
+                    <Text style={styles.addCourseTitle}>{item.title}</Text>
+                    {!met && (
+                      <View style={styles.lockedRow}>
+                        <Ionicons name="lock-closed" size={10} color={Colors.courseLocked} />
+                        <Text style={styles.lockedText}>Prerequisites not met</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.addCourseCredits, { color: met ? Colors.primary : Colors.textMuted }]}>
+                    {item.credits}cr
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+        )}
+      </BottomSheet>
     </View>
   );
 }

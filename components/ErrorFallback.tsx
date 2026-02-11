@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { reloadAppAsync } from "expo";
 import {
   StyleSheet,
@@ -12,6 +12,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { GestureDetector } from "react-native-gesture-handler";
+import Animated from "react-native-reanimated";
+import { BottomSheet } from "@/components/BottomSheet";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -33,6 +36,12 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
   };
 
   const [isModalVisible, setIsModalVisible] = useState(false);
+
+  const closeDetailsModal = useCallback(() => {
+    setIsModalVisible(false);
+  }, []);
+
+
 
   const handleRestart = async () => {
     try {
@@ -104,76 +113,40 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
       </View>
 
       {__DEV__ ? (
-        <Modal
+        <BottomSheet
           visible={isModalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setIsModalVisible(false)}
+          onClose={closeDetailsModal}
+          title="Error Details"
         >
-          <View style={styles.modalOverlay}>
+          <ScrollView
+            style={styles.modalScrollView}
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { paddingBottom: insets.bottom + 16 },
+            ]}
+            showsVerticalScrollIndicator
+          >
             <View
               style={[
-                styles.modalContainer,
-                { backgroundColor: theme.background },
+                styles.errorContainer,
+                { backgroundColor: theme.backgroundSecondary },
               ]}
             >
-              <View
+              <Text
                 style={[
-                  styles.modalHeader,
+                  styles.errorText,
                   {
-                    borderBottomColor: isDark
-                      ? "rgba(255, 255, 255, 0.1)"
-                      : "rgba(0, 0, 0, 0.1)",
+                    color: theme.text,
+                    fontFamily: monoFont,
                   },
                 ]}
+                selectable
               >
-                <Text style={[styles.modalTitle, { color: theme.text }]}>
-                  Error Details
-                </Text>
-                <Pressable
-                  onPress={() => setIsModalVisible(false)}
-                  accessibilityLabel="Close error details"
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                style={styles.modalScrollView}
-                contentContainerStyle={[
-                  styles.modalScrollContent,
-                  { paddingBottom: insets.bottom + 16 },
-                ]}
-                showsVerticalScrollIndicator
-              >
-                <View
-                  style={[
-                    styles.errorContainer,
-                    { backgroundColor: theme.backgroundSecondary },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.errorText,
-                      {
-                        color: theme.text,
-                        fontFamily: monoFont,
-                      },
-                    ]}
-                    selectable
-                  >
-                    {formatErrorDetails()}
-                  </Text>
-                </View>
-              </ScrollView>
+                {formatErrorDetails()}
+              </Text>
             </View>
-          </View>
-        </Modal>
+          </ScrollView>
+        </BottomSheet>
       ) : null}
     </View>
   );
@@ -246,6 +219,19 @@ const styles = StyleSheet.create({
     height: "90%",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    overflow: "hidden",
+  },
+  modalHandleHitArea: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
+  modalHandle: {
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+    opacity: 0.7,
   },
   modalHeader: {
     flexDirection: "row",

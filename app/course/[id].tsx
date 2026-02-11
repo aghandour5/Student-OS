@@ -67,17 +67,23 @@ export default function CourseDetailScreen() {
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (router.canGoBack()) {
-              router.dismissAll();
-            }
-            router.replace('/');
+            router.back();
           }}
           style={styles.backBtn}
         >
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </Pressable>
         <Text style={styles.topBarTitle} numberOfLines={1}>{course.code}</Text>
-        <View style={{ width: 40 }} />
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.dismissAll();
+            router.replace('/');
+          }}
+          style={styles.backBtn}
+        >
+          <Ionicons name="home-outline" size={20} color={Colors.text} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -175,7 +181,7 @@ export default function CourseDetailScreen() {
                   key={prereq.id}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.replace({ pathname: '/course/[id]', params: { id: prereq.id } });
+                    router.push({ pathname: '/course/[id]', params: { id: prereq.id } });
                   }}
                   style={styles.prereqCard}
                 >
@@ -212,7 +218,7 @@ export default function CourseDetailScreen() {
                 key={unlock.id}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.replace({ pathname: '/course/[id]', params: { id: unlock.id } });
+                  router.push({ pathname: '/course/[id]', params: { id: unlock.id } });
                 }}
                 style={styles.prereqCard}
               >
