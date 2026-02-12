@@ -74,6 +74,11 @@ export interface UserGrade {
   score: number;
 }
 
+export interface CourseNote {
+  courseId: string;
+  note: string;
+}
+
 export interface UserProfile {
   major: string;
   campus: string;
@@ -82,6 +87,7 @@ export interface UserProfile {
   inProgressCourses: string[];
   semesterPlans: SemesterPlan[];
   grades: UserGrade[];
+  notes: CourseNote[];
 }
 
 export const GRADE_POINTS: Record<string, number> = {

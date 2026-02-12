@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import type { CourseWithPrereqs } from '@shared/schema';
 
 type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'future';
@@ -24,6 +25,7 @@ const statusConfig: Record<CourseStatus, { color: string; icon: string; label: s
 };
 
 export function CourseCard({ course, status, onPress, compact, grade }: CourseCardProps) {
+  const { colors } = useTheme();
   const config = statusConfig[status];
 
   const handlePress = () => {
@@ -37,12 +39,12 @@ export function CourseCard({ course, status, onPress, compact, grade }: CourseCa
         onPress={handlePress}
         style={({ pressed }) => [
           styles.compactCard,
-          { borderLeftColor: config.color, opacity: pressed ? 0.8 : 1 },
+          { borderLeftColor: config.color, opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder },
         ]}
       >
         <View style={styles.compactContent}>
-          <Text style={styles.compactCode}>{course.code}</Text>
-          <Text style={styles.compactTitle} numberOfLines={1}>{course.title}</Text>
+          <Text style={[styles.compactCode, { color: colors.textMuted }]}>{course.code}</Text>
+          <Text style={[styles.compactTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
         </View>
         <View style={styles.compactRight}>
           <Text style={[styles.compactCredits, { color: config.color }]}>{course.credits}cr</Text>
@@ -57,26 +59,26 @@ export function CourseCard({ course, status, onPress, compact, grade }: CourseCa
       onPress={handlePress}
       style={({ pressed }) => [
         styles.card,
-        { opacity: pressed ? 0.85 : 1 },
+        { opacity: pressed ? 0.85 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder },
       ]}
     >
       <View style={[styles.statusIndicator, { backgroundColor: config.color }]} />
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.codeContainer}>
-            <Text style={styles.code}>{course.code}</Text>
+            <Text style={[styles.code, { color: colors.textSecondary }]}>{course.code}</Text>
             <View style={[styles.statusBadge, { backgroundColor: config.color + '20' }]}>
               <Ionicons name={config.icon as any} size={12} color={config.color} />
               <Text style={[styles.statusText, { color: config.color }]}>{config.label}</Text>
             </View>
           </View>
           <View style={styles.creditsContainer}>
-            <MaterialCommunityIcons name="school" size={14} color={Colors.textSecondary} />
-            <Text style={styles.credits}>{course.credits}</Text>
+            <MaterialCommunityIcons name="school" size={14} color={colors.textSecondary} />
+            <Text style={[styles.credits, { color: colors.textSecondary }]}>{course.credits}</Text>
           </View>
         </View>
-        <Text style={styles.title}>{course.title}</Text>
-        <Text style={styles.category}>{course.category}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{course.title}</Text>
+        <Text style={[styles.category, { color: colors.textMuted }]}>{course.category}</Text>
         {grade && (
           <View style={styles.gradeContainer}>
             <Text style={styles.gradeValue}>{grade}</Text>
@@ -84,8 +86,8 @@ export function CourseCard({ course, status, onPress, compact, grade }: CourseCa
         )}
         {course.prerequisites.length > 0 && (
           <View style={styles.prereqRow}>
-            <Ionicons name="git-branch-outline" size={12} color={Colors.textMuted} />
-            <Text style={styles.prereqText}>{course.prerequisites.length} prerequisite{course.prerequisites.length > 1 ? 's' : ''}</Text>
+            <Ionicons name="git-branch-outline" size={12} color={colors.textMuted} />
+            <Text style={[styles.prereqText, { color: colors.textMuted }]}>{course.prerequisites.length} prerequisite{course.prerequisites.length > 1 ? 's' : ''}</Text>
           </View>
         )}
       </View>

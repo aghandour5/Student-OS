@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 
 interface ProgressRingProps {
   progress: number;
@@ -18,10 +19,12 @@ export function ProgressRing({
   size = 120,
   strokeWidth = 8,
   color = Colors.primary,
-  trackColor = Colors.cardBorder,
+  trackColor,
   label,
   sublabel,
 }: ProgressRingProps) {
+  const { colors } = useTheme();
+  const resolvedTrackColor = trackColor ?? colors.cardBorder;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const clampedProgress = Math.min(Math.max(progress, 0), 1);
@@ -34,7 +37,7 @@ export function ProgressRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={trackColor}
+          stroke={resolvedTrackColor}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -53,8 +56,8 @@ export function ProgressRing({
         />
       </Svg>
       <View style={styles.labelContainer}>
-        {label && <Text style={styles.label}>{label}</Text>}
-        {sublabel && <Text style={styles.sublabel}>{sublabel}</Text>}
+        {label && <Text style={[styles.label, { color: colors.text }]}>{label}</Text>}
+        {sublabel && <Text style={[styles.sublabel, { color: colors.textSecondary }]}>{sublabel}</Text>}
       </View>
     </View>
   );

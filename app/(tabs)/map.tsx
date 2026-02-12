@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useCallback, startTransition, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, startTransition, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  Dimensions, ActivityIndicator, LayoutAnimation, UIManager
+  Dimensions, ActivityIndicator, LayoutAnimation, UIManager, TextInput
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +9,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDecay, withSpring, runOnJS } from 'react-native-reanimated';
 import Svg, { Line, Circle as SvgCircle, Rect, Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useAcademic } from '@/lib/academic-context';
 import type { CourseWithPrereqs } from '@shared/schema';
 
@@ -38,36 +40,62 @@ interface NodePosition {
   course: CourseWithPrereqs;
 }
 
+interface TooltipData {
+  course: CourseWithPrereqs;
+  status: CourseStatus;
+  x: number;
+  y: number;
+}
+
+const statusLabels: Record<string, string> = {
+  completed: 'Completed',
+  in_progress: 'In Progress',
+  available: 'Available',
+  locked: 'Locked',
+  future: 'Future',
+};
+
+const TOOLTIP_WIDTH = 220;
+const TOOLTIP_AUTO_DISMISS_MS = 3000;
+
 function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onPress();
       }}
-      style={[styles.filterChip, active && styles.filterChipActive]}
+      style={[styles.filterChip, { backgroundColor: colors.card, borderColor: colors.cardBorder }, active && styles.filterChipActive]}
     >
-      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+      <Text style={[styles.filterChipText, { color: colors.textSecondary }, active && styles.filterChipTextActive]}>{label}</Text>
     </Pressable>
   );
 }
 
 function SkeletonBlock({ width, height, style }: { width: number | string; height: number; style?: any }) {
+  const { colors } = useTheme();
   return (
-    <View style={[styles.skeletonBlock, { width, height }, style]} />
+    <View style={[styles.skeletonBlock, { width, height, backgroundColor: colors.card, borderColor: colors.cardBorder }, style]} />
   );
 }
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { courses, isLoading, getCourseStatus } = useAcademic();
+  const { colors } = useTheme();
+  const params = useLocalSearchParams<{ filter?: string }>();
+  const [mapSearch, setMapSearch] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<CourseStatus | 'all'>('all');
   const [pendingFilter, setPendingFilter] = useState<CourseStatus | 'all'>('all');
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [pendingHighlight, setPendingHighlight] = useState<string | null | undefined>(undefined);
   const [filterProgress, setFilterProgress] = useState(100);
-  const [displayedProgress, setDisplayedProgress] = useState(0);
+  const [displayedProgress, setDisplayedProgress] = useState(100);
   const [displayedFilterProgress, setDisplayedFilterProgress] = useState(100);
+  const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -79,6 +107,26 @@ export default function MapScreen() {
   const focalY = useSharedValue(0);
   const viewportWidth = useSharedValue(Dimensions.get('window').width);
   const viewportHeight = useSharedValue(Dimensions.get('window').height * 0.6);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (params.filter && ['completed', 'in_progress', 'available', 'locked'].includes(params.filter)) {
+        const f = params.filter as CourseStatus;
+        setPendingFilter(f);
+        setSelectedFilter(f);
+      }
+      return () => {
+        setHighlightedId(null);
+        setPendingHighlight(undefined);
+        setTooltipData(null);
+        setTooltipVisible(false);
+        if (tooltipTimerRef.current) {
+          clearTimeout(tooltipTimerRef.current);
+          tooltipTimerRef.current = null;
+        }
+      };
+    }, [params.filter])
+  );
 
   const handleHighlight = useCallback((newId: string | null) => {
     setPendingHighlight(newId);
@@ -137,14 +185,59 @@ export default function MapScreen() {
     }
   }, []);
 
+  const dismissTooltip = useCallback(() => {
+    setTooltipVisible(false);
+    setTooltipData(null);
+    if (tooltipTimerRef.current) {
+      clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+  }, []);
 
+  const showTooltip = useCallback((course: CourseWithPrereqs, status: CourseStatus, nodeX: number, nodeY: number) => {
+    if (tooltipTimerRef.current) {
+      clearTimeout(tooltipTimerRef.current);
+    }
+    setTooltipData({ course, status, x: nodeX, y: nodeY });
+    setTooltipVisible(true);
+    tooltipTimerRef.current = setTimeout(() => {
+      setTooltipVisible(false);
+      setTooltipData(null);
+      tooltipTimerRef.current = null;
+    }, TOOLTIP_AUTO_DISMISS_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimerRef.current) {
+        clearTimeout(tooltipTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mapSearch.trim().length > 0) {
+      const query = mapSearch.toLowerCase();
+      const match = courses.find(c =>
+        c.code.toLowerCase().includes(query) ||
+        c.title.toLowerCase().includes(query)
+      );
+      if (match) {
+        handleHighlight(match.id);
+      }
+    } else {
+      handleHighlight(null);
+    }
+  }, [mapSearch, courses]);
 
   const resetZoom = useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 150 });
     translateX.value = withSpring(0, { damping: 15, stiffness: 150 });
     translateY.value = withSpring(0, { damping: 15, stiffness: 150 });
     lastScale.value = 1;
-  }, [scale, translateX, translateY, lastScale]);
+    lastTranslateX.value = 0;
+    lastTranslateY.value = 0;
+  }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
 
   const mapTransformStyle = useAnimatedStyle(() => ({
     transform: [
@@ -186,29 +279,19 @@ export default function MapScreen() {
     };
   }, [semesters]);
 
-  // --- Gesture system (must come after svgWidth/svgHeight) ---
+  const contentWidth = useSharedValue(svgWidth);
+  const contentHeight = useSharedValue(svgHeight);
 
-  const clampTranslation = useCallback((s: number, tx: number, ty: number) => {
-    'worklet';
-    const contentW = svgWidth * s;
-    const contentH = svgHeight * s;
-    const vw = viewportWidth.value;
-    const vh = viewportHeight.value;
+  useEffect(() => {
+    contentWidth.value = svgWidth;
+    contentHeight.value = svgHeight;
+  }, [svgWidth, svgHeight]);
 
-    const margin = 40;
-    const minX = Math.min(0, -(contentW - vw) - margin);
-    const maxX = margin;
-    const minY = Math.min(0, -(contentH - vh) - margin);
-    const maxY = margin;
-
-    return {
-      x: Math.max(minX, Math.min(maxX, tx)),
-      y: Math.max(minY, Math.min(maxY, ty)),
-    };
-  }, [svgWidth, svgHeight, viewportWidth, viewportHeight]);
+  const isPinching = useSharedValue(false);
 
   const pinchGesture = useMemo(() => Gesture.Pinch()
     .onBegin((e) => {
+      isPinching.value = true;
       lastScale.value = scale.value;
       focalX.value = e.focalX;
       focalY.value = e.focalY;
@@ -223,54 +306,101 @@ export default function MapScreen() {
       scale.value = newScale;
     })
     .onEnd(() => {
+      isPinching.value = false;
       lastScale.value = scale.value;
+
+      const cW = contentWidth.value * scale.value;
+      const cH = contentHeight.value * scale.value;
+      const vw = viewportWidth.value;
+      const vh = viewportHeight.value;
+      let tx = translateX.value;
+      let ty = translateY.value;
+
+      if (cW <= vw) { tx = (vw - cW) / 2; }
+      else { tx = Math.max(-(cW - vw), Math.min(0, tx)); }
+      if (cH <= vh) { ty = (vh - cH) / 2; }
+      else { ty = Math.max(-(cH - vh), Math.min(0, ty)); }
+
+      if (tx !== translateX.value) translateX.value = withSpring(tx, { damping: 25, stiffness: 120 });
+      if (ty !== translateY.value) translateY.value = withSpring(ty, { damping: 25, stiffness: 120 });
       lastTranslateX.value = translateX.value;
       lastTranslateY.value = translateY.value;
-
-      const clamped = clampTranslation(scale.value, translateX.value, translateY.value);
-      if (clamped.x !== translateX.value) {
-        translateX.value = withSpring(clamped.x, { damping: 20, stiffness: 200 });
-      }
-      if (clamped.y !== translateY.value) {
-        translateY.value = withSpring(clamped.y, { damping: 20, stiffness: 200 });
-      }
-    }), [lastScale, scale, focalX, focalY, lastTranslateX, lastTranslateY, translateX, translateY, clampTranslation]);
+    }), [lastScale, scale, focalX, focalY, lastTranslateX, lastTranslateY, translateX, translateY, isPinching, contentWidth, contentHeight, viewportWidth, viewportHeight]);
 
   const panGesture = useMemo(() => Gesture.Pan()
     .minDistance(5)
     .minPointers(1)
-    .maxPointers(1)
-    .onBegin(() => {
-      translateX.value = translateX.value;
-      translateY.value = translateY.value;
+    .maxPointers(2)
+    .onStart(() => {
       lastTranslateX.value = translateX.value;
       lastTranslateY.value = translateY.value;
     })
     .onUpdate((e) => {
+      if (isPinching.value) return;
       translateX.value = lastTranslateX.value + e.translationX;
       translateY.value = lastTranslateY.value + e.translationY;
     })
     .onEnd((e) => {
-      const clamped = clampTranslation(scale.value, translateX.value, translateY.value);
-      const needsClampX = clamped.x !== translateX.value;
-      const needsClampY = clamped.y !== translateY.value;
+      if (isPinching.value) return;
+      const cW = contentWidth.value * scale.value;
+      const cH = contentHeight.value * scale.value;
+      const vw = viewportWidth.value;
+      const vh = viewportHeight.value;
 
-      if (needsClampX) {
-        translateX.value = withSpring(clamped.x, { damping: 20, stiffness: 200 });
-      } else {
-        translateX.value = withDecay({ velocity: e.velocityX, deceleration: 0.997 });
-      }
+      const minX = cW <= vw ? (vw - cW) / 2 : -(cW - vw);
+      const maxX = cW <= vw ? (vw - cW) / 2 : 0;
+      const minY = cH <= vh ? (vh - cH) / 2 : -(cH - vh);
+      const maxY = cH <= vh ? (vh - cH) / 2 : 0;
 
-      if (needsClampY) {
-        translateY.value = withSpring(clamped.y, { damping: 20, stiffness: 200 });
-      } else {
-        translateY.value = withDecay({ velocity: e.velocityY, deceleration: 0.997 });
-      }
-    }), [lastTranslateX, lastTranslateY, translateX, translateY, clampTranslation, scale]);
+      translateX.value = withDecay({
+        velocity: e.velocityX,
+        deceleration: 0.994,
+        clamp: [minX, maxX],
+      });
+      translateY.value = withDecay({
+        velocity: e.velocityY,
+        deceleration: 0.994,
+        clamp: [minY, maxY],
+      });
+
+      lastTranslateX.value = translateX.value;
+      lastTranslateY.value = translateY.value;
+    }), [lastTranslateX, lastTranslateY, translateX, translateY, scale, isPinching, contentWidth, contentHeight, viewportWidth, viewportHeight]);
 
   const mapGesture = useMemo(() => (
     Gesture.Simultaneous(panGesture, pinchGesture)
   ), [panGesture, pinchGesture]);
+
+  const mapViewportRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !mapViewportRef.current) return;
+    const el = mapViewportRef.current as unknown as HTMLElement;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const zoomFactor = e.deltaY > 0 ? 0.92 : 1.08;
+        const newS = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale.value * zoomFactor));
+        const rect = el.getBoundingClientRect();
+        const fx = e.clientX - rect.left;
+        const fy = e.clientY - rect.top;
+        const scaleDiff = newS / scale.value;
+        translateX.value = fx - scaleDiff * (fx - translateX.value);
+        translateY.value = fy - scaleDiff * (fy - translateY.value);
+        scale.value = newS;
+        lastScale.value = newS;
+        lastTranslateX.value = translateX.value;
+        lastTranslateY.value = translateY.value;
+      } else {
+        translateX.value = translateX.value - e.deltaX;
+        translateY.value = translateY.value - e.deltaY;
+        lastTranslateX.value = translateX.value;
+        lastTranslateY.value = translateY.value;
+      }
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [scale, translateX, translateY, lastScale, lastTranslateX, lastTranslateY]);
 
   const edges = useMemo(() => {
     const result: { from: NodePosition; to: NodePosition; status: CourseStatus }[] = [];
@@ -288,6 +418,7 @@ export default function MapScreen() {
 
   const loadingProgress = useMemo(() => {
     if (!isLoading) return 100;
+    if (courses.length > 0 && semesters.length > 0 && positions.size > 0 && edges.length > 0) return 100;
     let progress = 5;
     if (courses.length > 0) progress = 30;
     if (semesters.length > 0) progress = 55;
@@ -356,12 +487,28 @@ export default function MapScreen() {
     ? `Showing ${courses.length} courses`
     : `Showing ${filteredCourses.length} of ${courses.length} courses`;
 
+  const isWeb = Platform.OS === 'web';
+  const webScrollRef = useRef<ScrollView>(null);
+  const [webZoom, setWebZoom] = useState(1);
+
+  const handleZoomIn = useCallback(() => {
+    setWebZoom(prev => Math.min(2, prev + 0.2));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setWebZoom(prev => Math.max(0.4, prev - 0.2));
+  }, []);
+
+  const handleZoomReset = useCallback(() => {
+    setWebZoom(1);
+  }, []);
+
   if (displayedProgress < 100) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset }]}>
-        <Text style={styles.loadingPercent}>{displayedProgress}%</Text>
-        <Text style={styles.loadingText}>Loading your degree map</Text>
-        <View style={styles.progressBar}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset, backgroundColor: colors.background }]}>
+        <Text style={[styles.loadingPercent, { color: colors.primary }]}>{displayedProgress}%</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading your degree map</Text>
+        <View style={[styles.progressBar, { backgroundColor: colors.cardBorder }]}>
           <View style={[styles.progressFill, { width: `${displayedProgress}%` }]} />
         </View>
         <View style={styles.skeletonContainer}>
@@ -384,27 +531,34 @@ export default function MapScreen() {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + webTopInset + 12 }]}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.headerTitle}>Degree Map</Text>
-            <Text style={styles.headerSubtitle}>Computer Engineering</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Degree Map</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Computer Engineering</Text>
           </View>
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              resetZoom();
-            }}
-            style={({ pressed }) => [styles.resetZoomBtn, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Ionicons name="contract-outline" size={16} color={Colors.textSecondary} />
-            <Text style={styles.resetZoomText}>Reset</Text>
-          </Pressable>
         </View>
       </View>
 
-      <View style={styles.controlsContainer}>
+      <View style={[styles.mapSearchContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
+        <TextInput
+          style={[styles.mapSearchInput, { color: colors.text }]}
+          placeholder="Search courses on map..."
+          placeholderTextColor={colors.textMuted}
+          value={mapSearch}
+          onChangeText={setMapSearch}
+          returnKeyType="search"
+        />
+        {mapSearch.length > 0 && (
+          <Pressable onPress={() => setMapSearch('')}>
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </Pressable>
+        )}
+      </View>
+
+      <View style={[styles.controlsContainer, { backgroundColor: colors.background, borderBottomColor: colors.cardBorder + '30' }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -421,14 +575,14 @@ export default function MapScreen() {
         {pendingFilter !== selectedFilter && (
           <View style={styles.filterLoading}>
             <View style={styles.filterLoadingRow}>
-              <ActivityIndicator size="small" color={Colors.primary} />
+              <ActivityIndicator size="small" color={colors.primary} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.filterLoadingText}>
+                <Text style={[styles.filterLoadingText, { color: colors.primary }]}>
                   {pendingFilter === 'all'
                     ? 'Showing all courses...'
                     : `Showing ${pendingFilter.replace('_', ' ')} courses...`}
                 </Text>
-                <Text style={styles.filterLoadingSubtext}>
+                <Text style={[styles.filterLoadingSubtext, { color: colors.textMuted }]}>
                   Found {pendingCount} {pendingFilter === 'all' ? 'courses' : `${pendingFilter.replace('_', ' ')} courses`}
                 </Text>
               </View>
@@ -442,235 +596,473 @@ export default function MapScreen() {
 
         {pendingFilter === selectedFilter && (
           <View style={styles.filterSummary}>
-            <Text style={styles.filterSummaryText}>{filterSummaryText}</Text>
+            <Text style={[styles.filterSummaryText, { color: colors.textSecondary }]}>{filterSummaryText}</Text>
           </View>
         )}
       </View>
 
       {pendingHighlight !== undefined && (
         <View style={styles.highlightLoading}>
-          <ActivityIndicator size="small" color={Colors.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         </View>
       )}
 
-      <View style={styles.mapContainer}>
+      <View style={[styles.mapContainer, { backgroundColor: colors.background }]}>
         {filteredCourses.length === 0 && selectedFilter !== 'all' ? (
           <View style={styles.emptyState}>
-            <Ionicons name="search-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyStateText}>
+            <Ionicons name="search-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyStateText, { color: colors.text }]}>
               No {selectedFilter.replace('_', ' ')} courses found
             </Text>
-            <Text style={styles.emptyStateSubtext}>
+            <Text style={[styles.emptyStateSubtext, { color: colors.textMuted }]}>
               Try selecting a different filter
             </Text>
           </View>
-        ) : (
-          <GestureDetector gesture={mapGesture}>
-            <View style={styles.mapViewport}>
-              <Animated.View style={[mapTransformStyle, { width: svgWidth, height: svgHeight }]}>
-                <Svg width={svgWidth} height={svgHeight}>
-                  {edges.map((edge, i) => {
-                    const fromX = edge.from.x + NODE_WIDTH / 2;
-                    const fromY = edge.from.y + NODE_HEIGHT;
-                    const toX = edge.to.x + NODE_WIDTH / 2;
-                    const toY = edge.to.y;
-                    const isVisible = filteredIds.has(edge.from.course.id) || filteredIds.has(edge.to.course.id);
-                    const isHighlighted = highlightedId ? connectedEdgeIndices.has(i) : false;
-                    const isDimmed = highlightedId ? !isHighlighted : false;
+        ) : isWeb ? (
+          <View style={styles.mapViewport}>
+            <ScrollView
+              ref={webScrollRef}
+              style={{ flex: 1 }}
+              horizontal={false}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+              scrollEventThrottle={16}
+            >
+              <ScrollView
+                horizontal={true}
+                showsHorizontalScrollIndicator={true}
+                bounces={true}
+                nestedScrollEnabled={true}
+                contentContainerStyle={{ width: Math.max(svgWidth * webZoom, 1), minHeight: svgHeight * webZoom }}
+              >
+                <View style={{ width: svgWidth, height: svgHeight, transform: [{ scale: webZoom }], transformOrigin: 'top left' }}>
+                  <Svg width={svgWidth} height={svgHeight}>
+                    {highlightedId && edges.map((edge, i) => {
+                      if (connectedEdgeIndices.has(i)) return null;
+                      const fromX = edge.from.x + NODE_WIDTH / 2;
+                      const fromY = edge.from.y + NODE_HEIGHT;
+                      const toX = edge.to.x + NODE_WIDTH / 2;
+                      const toY = edge.to.y;
+                      const isVisible = filteredIds.has(edge.from.course.id) || filteredIds.has(edge.to.course.id);
+                      if (!isVisible) return null;
 
-                    if (isHighlighted) return null;
-
-                    return (
-                      <Line
-                        key={`edge-${i}`}
-                        x1={fromX}
-                        y1={fromY}
-                        x2={toX}
-                        y2={toY}
-                        stroke={isDimmed ? Colors.cardBorder + '15' : isVisible ? statusColors[edge.status] + '50' : Colors.cardBorder + '30'}
-                        strokeWidth={1.5}
-                        strokeDasharray={edge.status === 'locked' ? '4,4' : undefined}
-                      />
-                    );
-                  })}
-
-                  {highlightedId && edges.map((edge, i) => {
-                    if (!connectedEdgeIndices.has(i)) return null;
-                    const fromX = edge.from.x + NODE_WIDTH / 2;
-                    const fromY = edge.from.y + NODE_HEIGHT;
-                    const toX = edge.to.x + NODE_WIDTH / 2;
-                    const toY = edge.to.y;
-                    const edgeColor = statusColors[getCourseStatus(highlightedId)];
-                    return (
-                      <React.Fragment key={`hl-edge-${i}`}>
+                      return (
                         <Line
+                          key={`edge-${i}`}
                           x1={fromX}
                           y1={fromY}
                           x2={toX}
                           y2={toY}
-                          stroke={edgeColor + '30'}
-                          strokeWidth={8}
-                          strokeLinecap="round"
+                          stroke={colors.cardBorder + '15'}
+                          strokeWidth={1}
+                          strokeDasharray="4,4"
                         />
-                        <Line
-                          x1={fromX}
-                          y1={fromY}
-                          x2={toX}
-                          y2={toY}
-                          stroke={edgeColor}
-                          strokeWidth={2.5}
-                          strokeLinecap="round"
-                        />
-                        <SvgCircle cx={fromX} cy={fromY} r={4} fill={edgeColor} />
-                        <SvgCircle cx={toX} cy={toY} r={4} fill={edgeColor} />
-                      </React.Fragment>
-                    );
-                  })}
+                      );
+                    })}
 
-                  {semesters.map(([key], idx) => {
-                    const semCourses = semesters[idx][1];
-                    if (semCourses.length === 0) return null;
-                    const firstPos = positions.get(semCourses[0].id);
-                    if (!firstPos) return null;
-                    return (
-                      <SvgText
-                        key={`label-${key}`}
-                        x={LEFT_MARGIN}
-                        y={firstPos.y - 10}
-                        fill={Colors.textSecondary}
-                        fontSize={11}
-                        fontWeight="600"
-                        opacity={highlightedId ? 0.3 : 1}
-                      >
-                        {semesterLabels[idx] || key}
-                      </SvgText>
-                    );
-                  })}
-
-                  {Array.from(positions.entries()).map(([courseId, pos]) => {
-                    const status = getCourseStatus(courseId);
-                    const color = statusColors[status];
-                    const isVisible = filteredIds.has(courseId);
-                    const isConnected = highlightedId ? connectedNodeIds.has(courseId) : false;
-                    const isTheHighlighted = courseId === highlightedId;
-                    const dimForHighlight = highlightedId ? !isConnected : false;
-                    const opacity = dimForHighlight ? 0.15 : isVisible ? 1 : 0.25;
-
-                    return (
-                      <React.Fragment key={courseId}>
-                        {isTheHighlighted && (
-                          <Rect
-                            x={pos.x - 3}
-                            y={pos.y - 3}
-                            width={NODE_WIDTH + 6}
-                            height={NODE_HEIGHT + 6}
-                            rx={14}
-                            fill="none"
-                            stroke={color}
-                            strokeWidth={2}
-                            opacity={0.4}
+                    {highlightedId && edges.map((edge, i) => {
+                      if (!connectedEdgeIndices.has(i)) return null;
+                      const fromX = edge.from.x + NODE_WIDTH / 2;
+                      const fromY = edge.from.y + NODE_HEIGHT;
+                      const toX = edge.to.x + NODE_WIDTH / 2;
+                      const toY = edge.to.y;
+                      const edgeColor = statusColors[getCourseStatus(highlightedId)];
+                      return (
+                        <React.Fragment key={`hl-edge-${i}`}>
+                          <Line
+                            x1={fromX}
+                            y1={fromY}
+                            x2={toX}
+                            y2={toY}
+                            stroke={edgeColor + '30'}
+                            strokeWidth={8}
+                            strokeLinecap="round"
                           />
-                        )}
-                        <Rect
-                          x={pos.x}
-                          y={pos.y}
-                          width={NODE_WIDTH}
-                          height={NODE_HEIGHT}
-                          rx={12}
-                          fill={isConnected && !isTheHighlighted ? color + '15' : Colors.card}
-                          stroke={isConnected ? color : color}
-                          strokeWidth={isTheHighlighted ? 2.5 : isConnected ? 1.5 : 1}
-                          opacity={opacity}
-                        />
-                        <Rect
-                          x={pos.x}
-                          y={pos.y}
-                          width={4}
-                          height={NODE_HEIGHT}
-                          rx={2}
-                          fill={color}
-                          opacity={opacity}
-                        />
-                        <SvgText
-                          x={pos.x + 12}
-                          y={pos.y + 20}
-                          fill={Colors.textSecondary}
-                          fontSize={9}
-                          fontWeight="600"
-                          opacity={opacity}
-                        >
-                          {pos.course.code}
-                        </SvgText>
-                        <SvgText
-                          x={pos.x + 12}
-                          y={pos.y + 36}
-                          fill={Colors.text}
-                          fontSize={10}
-                          fontWeight="500"
-                          opacity={opacity}
-                        >
-                          {pos.course.title.length > 16 ? pos.course.title.substring(0, 20) + '...' : pos.course.title}
-                        </SvgText>
-                        <SvgText
-                          x={pos.x + NODE_WIDTH - 8}
-                          y={pos.y + 16}
-                          fill={color}
-                          fontSize={9}
-                          fontWeight="700"
-                          textAnchor="end"
-                          opacity={opacity}
-                        >
-                          {`${pos.course.credits} credits`}
-                        </SvgText>
-                      </React.Fragment>
-                    );
-                  })}
-                </Svg>
+                          <Line
+                            x1={fromX}
+                            y1={fromY}
+                            x2={toX}
+                            y2={toY}
+                            stroke={edgeColor}
+                            strokeWidth={2.5}
+                            strokeLinecap="round"
+                          />
+                          <SvgCircle cx={fromX} cy={fromY} r={4} fill={edgeColor} />
+                          <SvgCircle cx={toX} cy={toY} r={4} fill={edgeColor} />
+                        </React.Fragment>
+                      );
+                    })}
 
-                <Pressable
-                  style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}
-                  onPress={() => {
-                    if (highlightedId) {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      handleHighlight(null);
-                    }
-                  }}
-                >
-                  {Array.from(positions.entries()).map(([courseId, pos]) => {
-                    const isVisible = filteredIds.has(courseId);
-                    if (!isVisible) return null;
-                    return (
-                      <Pressable
-                        key={`touch-${courseId}`}
-                        testID={`map-node-${pos.course.code}`}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          handleHighlight(highlightedId === courseId ? null : courseId);
-                        }}
-                        style={{
-                          position: 'absolute',
-                          left: pos.x,
-                          top: pos.y,
-                          width: NODE_WIDTH,
-                          height: NODE_HEIGHT,
-                        }}
-                      />
-                    );
-                  })}
-                </Pressable>
-              </Animated.View>
+                    {semesters.map(([key], idx) => {
+                      const semCourses = semesters[idx][1];
+                      if (semCourses.length === 0) return null;
+                      const firstPos = positions.get(semCourses[0].id);
+                      if (!firstPos) return null;
+                      return (
+                        <SvgText
+                          key={`label-${key}`}
+                          x={LEFT_MARGIN}
+                          y={firstPos.y - 10}
+                          fill={colors.textSecondary}
+                          fontSize={11}
+                          fontWeight="600"
+                          opacity={highlightedId ? 0.3 : 1}
+                        >
+                          {semesterLabels[idx] || key}
+                        </SvgText>
+                      );
+                    })}
+
+                    {Array.from(positions.entries()).map(([courseId, pos]) => {
+                      const status = getCourseStatus(courseId);
+                      const color = statusColors[status];
+                      const isVisible = filteredIds.has(courseId);
+                      const isConnected = highlightedId ? connectedNodeIds.has(courseId) : false;
+                      const isTheHighlighted = courseId === highlightedId;
+                      const dimForHighlight = highlightedId ? !isConnected : false;
+                      const opacity = dimForHighlight ? 0.15 : isVisible ? 1 : 0.25;
+
+                      return (
+                        <React.Fragment key={courseId}>
+                          {isTheHighlighted && (
+                            <Rect
+                              x={pos.x - 3}
+                              y={pos.y - 3}
+                              width={NODE_WIDTH + 6}
+                              height={NODE_HEIGHT + 6}
+                              rx={14}
+                              fill="none"
+                              stroke={color}
+                              strokeWidth={2}
+                              opacity={0.4}
+                            />
+                          )}
+                          <Rect
+                            x={pos.x}
+                            y={pos.y}
+                            width={NODE_WIDTH}
+                            height={NODE_HEIGHT}
+                            rx={12}
+                            fill={isConnected && !isTheHighlighted ? color + '15' : colors.card}
+                            stroke={isConnected ? color : color}
+                            strokeWidth={isTheHighlighted ? 2.5 : isConnected ? 1.5 : 1}
+                            opacity={opacity}
+                          />
+                          <Rect
+                            x={pos.x}
+                            y={pos.y}
+                            width={4}
+                            height={NODE_HEIGHT}
+                            rx={2}
+                            fill={color}
+                            opacity={opacity}
+                          />
+                          <SvgText
+                            x={pos.x + 12}
+                            y={pos.y + 20}
+                            fill={colors.textSecondary}
+                            fontSize={9}
+                            fontWeight="600"
+                            opacity={opacity}
+                          >
+                            {pos.course.code}
+                          </SvgText>
+                          <SvgText
+                            x={pos.x + 12}
+                            y={pos.y + 36}
+                            fill={colors.text}
+                            fontSize={10}
+                            fontWeight="500"
+                            opacity={opacity}
+                          >
+                            {pos.course.title.length > 16 ? pos.course.title.substring(0, 20) + '...' : pos.course.title}
+                          </SvgText>
+                          <SvgText
+                            x={pos.x + NODE_WIDTH - 8}
+                            y={pos.y + 16}
+                            fill={color}
+                            fontSize={9}
+                            fontWeight="700"
+                            textAnchor="end"
+                            opacity={opacity}
+                          >
+                            {`${pos.course.credits} credits`}
+                          </SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+                  </Svg>
+
+                  <Pressable
+                    style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}
+                    onPress={() => {
+                      if (tooltipVisible) {
+                        dismissTooltip();
+                        return;
+                      }
+                      if (highlightedId) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        handleHighlight(null);
+                      }
+                    }}
+                  >
+                    {Array.from(positions.entries()).map(([courseId, pos]) => {
+                      const isVisible = filteredIds.has(courseId);
+                      if (!isVisible) return null;
+                      return (
+                        <Pressable
+                          key={`touch-${courseId}`}
+                          testID={`map-node-${pos.course.code}`}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            if (tooltipVisible) {
+                              dismissTooltip();
+                              return;
+                            }
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            handleHighlight(highlightedId === courseId ? null : courseId);
+                          }}
+                          onLongPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            const status = getCourseStatus(courseId);
+                            showTooltip(pos.course, status, pos.x, pos.y);
+                          }}
+                          delayLongPress={500}
+                          style={{
+                            position: 'absolute',
+                            left: pos.x,
+                            top: pos.y,
+                            width: NODE_WIDTH,
+                            height: NODE_HEIGHT,
+                          }}
+                        />
+                      );
+                    })}
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </ScrollView>
+            <View style={styles.zoomControls}>
+              <Pressable onPress={handleZoomIn} style={({ pressed }) => [styles.zoomBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="add" size={22} color={colors.text} />
+              </Pressable>
+              <Text style={styles.zoomLabel}>{Math.round(webZoom * 100)}%</Text>
+              <Pressable onPress={handleZoomOut} style={({ pressed }) => [styles.zoomBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="remove" size={22} color={colors.text} />
+              </Pressable>
+              <Pressable onPress={handleZoomReset} style={({ pressed }) => [styles.zoomBtn, styles.zoomResetBtn, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="contract-outline" size={16} color={colors.textSecondary} />
+              </Pressable>
             </View>
-          </GestureDetector>
+          </View>
+        ) : (
+          <View style={styles.mapViewport}>
+            <ScrollView
+              style={{ flex: 1 }}
+              horizontal={false}
+              showsVerticalScrollIndicator={true}
+              bounces={true}
+              scrollEventThrottle={16}
+            >
+              <ScrollView
+                horizontal={true}
+                showsHorizontalScrollIndicator={true}
+                bounces={true}
+                nestedScrollEnabled={true}
+                contentContainerStyle={{ width: Math.max(svgWidth * webZoom, 1), minHeight: svgHeight * webZoom }}
+              >
+                <View style={{ width: svgWidth, height: svgHeight, transform: [{ scale: webZoom }], transformOrigin: 'top left' }}>
+                  <Svg width={svgWidth} height={svgHeight}>
+                    {highlightedId && edges.map((edge, i) => {
+                      if (connectedEdgeIndices.has(i)) return null;
+                      const fromX = edge.from.x + NODE_WIDTH / 2;
+                      const fromY = edge.from.y + NODE_HEIGHT;
+                      const toX = edge.to.x + NODE_WIDTH / 2;
+                      const toY = edge.to.y;
+                      const isVisible = filteredIds.has(edge.from.course.id) || filteredIds.has(edge.to.course.id);
+                      if (!isVisible) return null;
+                      return (
+                        <Line key={`edge-${i}`} x1={fromX} y1={fromY} x2={toX} y2={toY} stroke={colors.cardBorder + '15'} strokeWidth={1} strokeDasharray="4,4" />
+                      );
+                    })}
+                    {highlightedId && edges.map((edge, i) => {
+                      if (!connectedEdgeIndices.has(i)) return null;
+                      const fromX = edge.from.x + NODE_WIDTH / 2;
+                      const fromY = edge.from.y + NODE_HEIGHT;
+                      const toX = edge.to.x + NODE_WIDTH / 2;
+                      const toY = edge.to.y;
+                      const edgeColor = statusColors[getCourseStatus(highlightedId)];
+                      return (
+                        <React.Fragment key={`hl-edge-${i}`}>
+                          <Line x1={fromX} y1={fromY} x2={toX} y2={toY} stroke={edgeColor + '30'} strokeWidth={8} strokeLinecap="round" />
+                          <Line x1={fromX} y1={fromY} x2={toX} y2={toY} stroke={edgeColor} strokeWidth={2.5} strokeLinecap="round" />
+                          <SvgCircle cx={fromX} cy={fromY} r={4} fill={edgeColor} />
+                          <SvgCircle cx={toX} cy={toY} r={4} fill={edgeColor} />
+                        </React.Fragment>
+                      );
+                    })}
+                    {semesters.map(([key], idx) => {
+                      const semCourses = semesters[idx][1];
+                      if (semCourses.length === 0) return null;
+                      const firstPos = positions.get(semCourses[0].id);
+                      if (!firstPos) return null;
+                      return (
+                        <SvgText key={`label-${key}`} x={LEFT_MARGIN} y={firstPos.y - 10} fill={colors.textSecondary} fontSize={11} fontWeight="600" opacity={highlightedId ? 0.3 : 1}>
+                          {semesterLabels[idx] || key}
+                        </SvgText>
+                      );
+                    })}
+                    {Array.from(positions.entries()).map(([courseId, pos]) => {
+                      const status = getCourseStatus(courseId);
+                      const color = statusColors[status];
+                      const isVisible = filteredIds.has(courseId);
+                      const isConnected = highlightedId ? connectedNodeIds.has(courseId) : false;
+                      const isTheHighlighted = courseId === highlightedId;
+                      const dimForHighlight = highlightedId ? !isConnected : false;
+                      const opacity = dimForHighlight ? 0.15 : isVisible ? 1 : 0.25;
+                      return (
+                        <React.Fragment key={courseId}>
+                          {isTheHighlighted && (
+                            <Rect x={pos.x - 3} y={pos.y - 3} width={NODE_WIDTH + 6} height={NODE_HEIGHT + 6} rx={14} fill="none" stroke={color} strokeWidth={2} opacity={0.4} />
+                          )}
+                          <Rect x={pos.x} y={pos.y} width={NODE_WIDTH} height={NODE_HEIGHT} rx={12} fill={isConnected && !isTheHighlighted ? color + '15' : colors.card} stroke={color} strokeWidth={isTheHighlighted ? 2.5 : isConnected ? 1.5 : 1} opacity={opacity} />
+                          <Rect x={pos.x} y={pos.y} width={4} height={NODE_HEIGHT} rx={2} fill={color} opacity={opacity} />
+                          <SvgText x={pos.x + 12} y={pos.y + 20} fill={colors.textSecondary} fontSize={9} fontWeight="600" opacity={opacity}>{pos.course.code}</SvgText>
+                          <SvgText x={pos.x + 12} y={pos.y + 36} fill={colors.text} fontSize={10} fontWeight="500" opacity={opacity}>{pos.course.title.length > 16 ? pos.course.title.substring(0, 20) + '...' : pos.course.title}</SvgText>
+                          <SvgText x={pos.x + NODE_WIDTH - 8} y={pos.y + 16} fill={color} fontSize={9} fontWeight="700" textAnchor="end" opacity={opacity}>{`${pos.course.credits} credits`}</SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+                  </Svg>
+                  <Pressable
+                    style={[StyleSheet.absoluteFill, { width: svgWidth, height: svgHeight }]}
+                    onPress={() => {
+                      if (tooltipVisible) { dismissTooltip(); return; }
+                      if (highlightedId) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleHighlight(null); }
+                    }}
+                  >
+                    {Array.from(positions.entries()).map(([courseId, pos]) => {
+                      const isVisible = filteredIds.has(courseId);
+                      if (!isVisible) return null;
+                      return (
+                        <Pressable
+                          key={`touch-${courseId}`}
+                          testID={`map-node-${pos.course.code}`}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            if (tooltipVisible) { dismissTooltip(); return; }
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            handleHighlight(highlightedId === courseId ? null : courseId);
+                          }}
+                          onLongPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            const status = getCourseStatus(courseId);
+                            showTooltip(pos.course, status, pos.x, pos.y);
+                          }}
+                          delayLongPress={500}
+                          style={{ position: 'absolute', left: pos.x, top: pos.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+                        />
+                      );
+                    })}
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </ScrollView>
+            <View style={styles.zoomControls}>
+              <Pressable onPress={handleZoomIn} style={({ pressed }) => [styles.zoomBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="add" size={22} color={colors.text} />
+              </Pressable>
+              <Text style={[styles.zoomLabel, { color: colors.textMuted }]}>{Math.round(webZoom * 100)}%</Text>
+              <Pressable onPress={handleZoomOut} style={({ pressed }) => [styles.zoomBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="remove" size={22} color={colors.text} />
+              </Pressable>
+              <Pressable onPress={handleZoomReset} style={({ pressed }) => [styles.zoomBtn, styles.zoomResetBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }, pressed && { opacity: 0.7 }]}>
+                <Ionicons name="contract-outline" size={16} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
         )}
+
+        {tooltipVisible && tooltipData && (() => {
+          const vpWidth = Dimensions.get('window').width;
+          const vpHeight = Dimensions.get('window').height * 0.6;
+          let tooltipX = tooltipData.x + NODE_WIDTH / 2 - TOOLTIP_WIDTH / 2;
+          let tooltipY = tooltipData.y - 10;
+          let showAbove = true;
+
+          if (tooltipY < 10) {
+            tooltipY = tooltipData.y + NODE_HEIGHT + 10;
+            showAbove = false;
+          }
+          if (tooltipY > vpHeight - 160) {
+            tooltipY = tooltipData.y - 10;
+            showAbove = true;
+          }
+
+          tooltipX = Math.max(8, Math.min(tooltipX, vpWidth - TOOLTIP_WIDTH - 8));
+
+          const prereqCount = tooltipData.course.prerequisites.length;
+          const unlocksCount = tooltipData.course.unlocks.length;
+          const color = statusColors[tooltipData.status];
+
+          return (
+            <Pressable
+              style={[styles.tooltipOverlay]}
+              onPress={dismissTooltip}
+            >
+              <View
+                style={[
+                  styles.tooltipCard,
+                  {
+                    left: tooltipX,
+                    top: showAbove ? undefined : tooltipY,
+                    bottom: showAbove ? vpHeight - tooltipData.y + 10 : undefined,
+                    backgroundColor: colors.cardElevated,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+              >
+                <View style={styles.tooltipHeader}>
+                  <Text style={[styles.tooltipCode, { color: colors.text }]}>{tooltipData.course.code}</Text>
+                  <View style={[styles.tooltipBadge, { backgroundColor: color + '25' }]}>
+                    <View style={[styles.tooltipBadgeDot, { backgroundColor: color }]} />
+                    <Text style={[styles.tooltipBadgeText, { color }]}>
+                      {statusLabels[tooltipData.status] || tooltipData.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.tooltipTitle, { color: colors.textSecondary }]} numberOfLines={2}>{tooltipData.course.title}</Text>
+                <View style={[styles.tooltipDivider, { backgroundColor: colors.cardBorder }]} />
+                <View style={styles.tooltipRow}>
+                  <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Credits</Text>
+                  <Text style={[styles.tooltipValue, { color: colors.textSecondary }]}>{tooltipData.course.credits}</Text>
+                </View>
+                <View style={styles.tooltipRow}>
+                  <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Category</Text>
+                  <Text style={[styles.tooltipValue, { color: Colors.categoryColors[tooltipData.course.category] || colors.textSecondary }]}>
+                    {tooltipData.course.category}
+                  </Text>
+                </View>
+                <View style={styles.tooltipRow}>
+                  <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Prerequisites</Text>
+                  <Text style={[styles.tooltipValue, { color: colors.textSecondary }]}>{prereqCount}</Text>
+                </View>
+                <View style={styles.tooltipRow}>
+                  <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Unlocks</Text>
+                  <Text style={[styles.tooltipValue, { color: colors.textSecondary }]}>{unlocksCount}</Text>
+                </View>
+              </View>
+            </Pressable>
+          );
+        })()}
       </View>
 
       <View style={styles.legendOverlay}>
-        <View style={styles.legendContainer}>
+        <View style={[styles.legendContainer, { backgroundColor: colors.card + 'EE', borderColor: colors.cardBorder }]}>
           {(['completed', 'in_progress', 'available', 'locked'] as CourseStatus[]).map(status => (
             <View key={status} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: statusColors[status] }]} />
-              <Text style={styles.legendText}>{status.replace('_', ' ')}</Text>
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>{status.replace('_', ' ')}</Text>
             </View>
           ))}
         </View>
@@ -865,13 +1257,14 @@ const styles = StyleSheet.create({
   },
   mapViewport: {
     flex: 1,
+    overflow: 'hidden',
   },
   mapCanvas: {
     position: 'relative',
   },
   legendOverlay: {
     position: 'absolute',
-    bottom: Platform.OS === 'web' ? 24 : 120, // Adjust for tab bar
+    bottom: Platform.OS === 'web' ? 80 : 70,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -910,6 +1303,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     textTransform: 'capitalize',
   },
+  mapSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  mapSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    padding: 0,
+  },
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -925,5 +1337,111 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textMuted,
     fontFamily: 'Inter_400Regular',
+  },
+  tooltipOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+  },
+  tooltipCard: {
+    position: 'absolute',
+    width: TOOLTIP_WIDTH,
+    backgroundColor: Colors.cardElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+    zIndex: 10000,
+  },
+  tooltipHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tooltipCode: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+  },
+  tooltipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+  tooltipBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  tooltipBadgeText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  tooltipTitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 8,
+  },
+  tooltipDivider: {
+    height: 1,
+    backgroundColor: Colors.cardBorder,
+    marginBottom: 8,
+  },
+  tooltipRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tooltipLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+  },
+  tooltipValue: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  zoomControls: {
+    position: 'absolute',
+    bottom: 120,
+    right: 16,
+    alignItems: 'center',
+    gap: 4,
+  },
+  zoomBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomResetBtn: {
+    marginTop: 4,
+    width: 40,
+    height: 32,
+    borderRadius: 10,
+  },
+  zoomLabel: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_500Medium',
+    textAlign: 'center',
   },
 });

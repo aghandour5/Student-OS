@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
-import { ThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { ThemeProvider, useTheme } from "@/lib/theme-context";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -20,23 +21,36 @@ import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
-function RootLayoutNav() {
+function ThemedRoot() {
+  const { colors, isDark } = useTheme();
+
   return (
-    <Stack
-      screenOptions={{
-        headerBackTitle: "Back",
-        headerShown: false,
-        animation: "slide_from_right",
-        contentStyle: { backgroundColor: Colors.background },
-        gestureEnabled: true,
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
-      <Stack.Screen
-        name="course/[id]"
-        options={{ headerShown: false, animation: "slide_from_right" }}
-      />
-    </Stack>
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <NavThemeProvider value={{
+        ...isDark ? DarkTheme : DefaultTheme,
+        colors: {
+          ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+          background: colors.background,
+        },
+      }}>
+        <Stack
+          screenOptions={{
+            headerBackTitle: "Back",
+            headerShown: false,
+            animation: "slide_from_right",
+            contentStyle: { backgroundColor: colors.background },
+            gestureEnabled: true,
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
+          <Stack.Screen
+            name="course/[id]"
+            options={{ headerShown: false, animation: "slide_from_right" }}
+          />
+        </Stack>
+      </NavThemeProvider>
+    </>
   );
 }
 
@@ -63,18 +77,11 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView>
           <KeyboardProvider>
-            <AcademicProvider>
-              <StatusBar style="light" />
-              <ThemeProvider value={{
-                ...DarkTheme,
-                colors: {
-                  ...DarkTheme.colors,
-                  background: Colors.background,
-                },
-              }}>
-                <RootLayoutNav />
-              </ThemeProvider>
-            </AcademicProvider>
+            <ThemeProvider>
+              <AcademicProvider>
+                <ThemedRoot />
+              </AcademicProvider>
+            </ThemeProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>
       </QueryClientProvider>

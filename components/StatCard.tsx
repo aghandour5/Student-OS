@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 
 interface StatCardProps {
   icon: string;
@@ -10,17 +11,33 @@ interface StatCardProps {
   value: string;
   subtitle?: string;
   small?: boolean;
+  onPress?: () => void;
 }
 
-export function StatCard({ icon, iconColor = Colors.primary, label, value, subtitle, small }: StatCardProps) {
-  return (
-    <View style={[styles.card, small && styles.smallCard]}>
+export function StatCard({ icon, iconColor = Colors.primary, label, value, subtitle, small, onPress }: StatCardProps) {
+  const { colors } = useTheme();
+  const content = (
+    <>
       <View style={[styles.iconContainer, { backgroundColor: iconColor + '18' }]}>
         <Ionicons name={icon as any} size={small ? 18 : 22} color={iconColor} />
       </View>
-      <Text style={[styles.value, small && styles.smallValue]}>{value}</Text>
-      <Text style={[styles.label, small && styles.smallLabel]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      <Text style={[styles.value, small && styles.smallValue, { color: colors.text }]}>{value}</Text>
+      <Text style={[styles.label, small && styles.smallLabel, { color: colors.textSecondary }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
+      {subtitle && <Text style={[styles.subtitle, { color: colors.textMuted }]}>{subtitle}</Text>}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable style={[styles.card, small && styles.smallCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPress}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.card, small && styles.smallCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      {content}
     </View>
   );
 }

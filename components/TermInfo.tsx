@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Alert, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 
 export type TermKey = 'Prerequisites' | 'Corequisites' | 'Unlocks' | 'Credits' | 'GPA' | 'Cumulative GPA' | 'Semester GPA';
 
@@ -23,7 +24,9 @@ interface TermInfoProps {
     style?: any;
 }
 
-export function TermInfo({ term, size = 16, color = Colors.textSecondary, style }: TermInfoProps) {
+export function TermInfo({ term, size = 16, color, style }: TermInfoProps) {
+    const { colors } = useTheme();
+    const resolvedColor = color ?? colors.textSecondary;
     const handlePress = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         Alert.alert(term, DEFINITIONS[term]);
@@ -31,7 +34,7 @@ export function TermInfo({ term, size = 16, color = Colors.textSecondary, style 
 
     return (
         <Pressable onPress={handlePress} style={[styles.container, style]} hitSlop={8}>
-            <Ionicons name="information-circle-outline" size={size} color={color} />
+            <Ionicons name="information-circle-outline" size={size} color={resolvedColor} />
         </Pressable>
     );
 }

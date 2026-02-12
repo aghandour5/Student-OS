@@ -7,6 +7,7 @@ import { Platform, StyleSheet, useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import Colors from "@/constants/colors";
+import { useTheme } from "@/lib/theme-context";
 
 function NativeTabLayout() {
   return (
@@ -32,9 +33,8 @@ function NativeTabLayout() {
 }
 
 function ClassicTabLayout() {
-  const colorScheme = useColorScheme();
   const safeAreaInsets = useSafeAreaInsets();
-  const isDark = true;
+  const { isDark, colors } = useTheme();
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
 
@@ -42,13 +42,13 @@ function ClassicTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: isIOS ? "transparent" : Colors.backgroundSecondary,
+          backgroundColor: isIOS ? "transparent" : colors.backgroundSecondary,
           borderTopWidth: isWeb ? 1 : 0,
-          borderTopColor: Colors.cardBorder,
+          borderTopColor: colors.cardBorder,
           elevation: 0,
           ...(isWeb ? { height: 84 } : {}),
         },
@@ -56,11 +56,11 @@ function ClassicTabLayout() {
           isIOS ? (
             <BlurView
               intensity={100}
-              tint="dark"
+              tint={isDark ? "dark" : "light"}
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.backgroundSecondary }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.backgroundSecondary }]} />
           ) : null,
       }}
     >

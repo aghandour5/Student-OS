@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import {
-  type CourseWithPrereqs, type SemesterPlan, type UserGrade, type UserProfile,
+  type CourseWithPrereqs, type SemesterPlan, type UserGrade, type UserProfile, type CourseNote,
   GRADE_POINTS
 } from '@shared/schema';
 import { offlineCourses } from './offline-data';
@@ -18,6 +18,7 @@ const DEFAULT_PROFILE: UserProfile = {
   inProgressCourses: [],
   semesterPlans: [],
   grades: [],
+  notes: [],
 };
 
 type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'future';
@@ -34,12 +35,17 @@ interface AcademicContextValue {
   getMissingPrereqs: (courseId: string) => CourseWithPrereqs[];
   toggleCourseCompleted: (courseId: string) => void;
   toggleCourseInProgress: (courseId: string) => void;
+  toggleYearCompleted: (year: number) => void;
+  isYearCompleted: (year: number) => boolean;
   setGrade: (courseId: string, grade: string, score: number) => void;
   removeGrade: (courseId: string) => void;
   addSemesterPlan: (plan: SemesterPlan) => void;
   removeSemesterPlan: (planId: string) => void;
   addCourseToSemester: (planId: string, courseId: string) => void;
   removeCourseFromSemester: (planId: string, courseId: string) => void;
+  setCourseNote: (courseId: string, note: string) => void;
+  getCourseNote: (courseId: string) => string;
+  getPrerequisiteChain: (courseId: string) => CourseWithPrereqs[][];
   calculateGPA: () => number;
   calculateSemesterGPA: (courseIds: string[]) => number;
   totalCredits: number;
@@ -187,6 +193,34 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const isYearCompleted = useCallback((year: number): boolean => {
+    const yearCourses = courses.filter(c => c.year === year);
+    if (yearCourses.length === 0) return false;
+    return yearCourses.every(c => profile.completedCourses.includes(String(c.id)));
+  }, [courses, profile.completedCourses]);
+
+  const toggleYearCompleted = useCallback((year: number) => {
+    setProfile(prev => {
+      const yearCourseIds = courses.filter(c => c.year === year).map(c => String(c.id));
+      const allCompleted = yearCourseIds.every(id => prev.completedCourses.includes(id));
+
+      if (allCompleted) {
+        return {
+          ...prev,
+          completedCourses: prev.completedCourses.filter(id => !yearCourseIds.includes(id)),
+          grades: prev.grades.filter(g => !yearCourseIds.includes(g.courseId)),
+        };
+      }
+      const newCompleted = [...new Set([...prev.completedCourses, ...yearCourseIds])];
+      const newInProgress = prev.inProgressCourses.filter(id => !yearCourseIds.includes(id));
+      return {
+        ...prev,
+        completedCourses: newCompleted,
+        inProgressCourses: newInProgress,
+      };
+    });
+  }, [courses]);
+
   const setGrade = useCallback((courseId: string, grade: string, score: number) => {
     setProfile(prev => ({
       ...prev,
@@ -289,6 +323,58 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     }, 0);
   }, [profile.inProgressCourses, courseMap]);
 
+  const setCourseNote = useCallback((courseId: string, note: string) => {
+    setProfile(prev => ({
+      ...prev,
+      notes: [
+        ...prev.notes.filter(n => n.courseId !== courseId),
+        ...(note.trim() ? [{ courseId, note: note.trim() }] : []),
+      ],
+    }));
+  }, []);
+
+  const getCourseNote = useCallback((courseId: string): string => {
+    return profile.notes?.find(n => n.courseId === courseId)?.note ?? '';
+  }, [profile.notes]);
+
+  const getPrerequisiteChain = useCallback((courseId: string): CourseWithPrereqs[][] => {
+    const chain: CourseWithPrereqs[][] = [];
+    let currentLevel = [courseId];
+    const visited = new Set<string>();
+
+    while (currentLevel.length > 0) {
+      const nextLevel: string[] = [];
+      const levelCourses: CourseWithPrereqs[] = [];
+
+      for (const id of currentLevel) {
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const course = courseMap.get(id);
+        if (!course) continue;
+
+        const missingPrereqs = course.prerequisites.filter(pid => !profile.completedCourses.includes(pid));
+        if (missingPrereqs.length > 0) {
+          for (const pid of missingPrereqs) {
+            if (!visited.has(pid)) {
+              const prereqCourse = courseMap.get(pid);
+              if (prereqCourse) {
+                levelCourses.push(prereqCourse);
+                nextLevel.push(pid);
+              }
+            }
+          }
+        }
+      }
+
+      if (levelCourses.length > 0) {
+        chain.push(levelCourses);
+      }
+      currentLevel = nextLevel;
+    }
+
+    return chain.reverse();
+  }, [courseMap, profile.completedCourses]);
+
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
     AsyncStorage.removeItem(STORAGE_KEY);
@@ -306,12 +392,17 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     getMissingPrereqs,
     toggleCourseCompleted,
     toggleCourseInProgress,
+    toggleYearCompleted,
+    isYearCompleted,
     setGrade,
     removeGrade,
     addSemesterPlan,
     removeSemesterPlan,
     addCourseToSemester,
     removeCourseFromSemester,
+    setCourseNote,
+    getCourseNote,
+    getPrerequisiteChain,
     calculateGPA,
     calculateSemesterGPA,
     totalCredits,
@@ -321,9 +412,10 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   }), [
     profile, courses, coursesLoading, loaded, isOnline,
     getCourseStatus, getPrerequisitesFor, getUnlockedBy, arePrereqsMet, getMissingPrereqs,
-    toggleCourseCompleted, toggleCourseInProgress,
+    toggleCourseCompleted, toggleCourseInProgress, toggleYearCompleted, isYearCompleted,
     setGrade, removeGrade,
     addSemesterPlan, removeSemesterPlan, addCourseToSemester, removeCourseFromSemester,
+    setCourseNote, getCourseNote, getPrerequisiteChain,
     calculateGPA, calculateSemesterGPA,
     totalCredits, completedCredits, inProgressCredits, resetProfile,
   ]);

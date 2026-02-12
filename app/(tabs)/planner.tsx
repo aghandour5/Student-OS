@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  ActivityIndicator, Modal, FlatList, Alert
+  ActivityIndicator, Modal, FlatList, Alert, Share
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useAcademic } from '@/lib/academic-context';
 import type { SemesterPlan, CourseWithPrereqs } from '@shared/schema';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -23,6 +24,7 @@ export default function PlannerScreen() {
     addCourseToSemester, removeCourseFromSemester,
     getCourseStatus, arePrereqsMet, getMissingPrereqs,
   } = useAcademic();
+  const { colors } = useTheme();
 
   const [showNewSemester, setShowNewSemester] = useState(false);
   const [showAddCourse, setShowAddCourse] = useState<string | null>(null);
@@ -124,8 +126,8 @@ export default function PlannerScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset, backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -137,21 +139,56 @@ export default function PlannerScreen() {
   });
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + webTopInset + 12 }]}>
         <View>
-          <Text style={styles.headerTitle}>Semester Planner</Text>
-          <Text style={styles.headerSubtitle}>{sortedPlans.length} semester{sortedPlans.length !== 1 ? 's' : ''} planned</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Semester Planner</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{sortedPlans.length} semester{sortedPlans.length !== 1 ? 's' : ''} planned</Text>
         </View>
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setShowNewSemester(true);
-          }}
-          style={styles.addBtn}
-        >
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {sortedPlans.length > 0 && (
+            <Pressable
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const lines: string[] = ['UniFlow - Semester Plan\n'];
+                sortedPlans.forEach(plan => {
+                  const credits = getSemesterCredits(plan);
+                  lines.push(`${plan.name} (${credits} credits)`);
+                  plan.courseIds.forEach(id => {
+                    const course = courseMap.get(id);
+                    if (course) {
+                      lines.push(`  - ${course.code}: ${course.title} (${course.credits} cr)`);
+                    }
+                  });
+                  lines.push('');
+                });
+                const totalCredits = sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0);
+                lines.push(`Total: ${totalCredits} credits across ${sortedPlans.length} semester(s)`);
+                const text = lines.join('\n');
+                try {
+                  await Share.share({ message: text });
+                } catch (e) {
+                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                    await navigator.clipboard.writeText(text);
+                    Alert.alert('Copied', 'Plan copied to clipboard');
+                  }
+                }
+              }}
+              style={[styles.shareBtn, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}
+            >
+              <Ionicons name="share-outline" size={20} color={colors.text} />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowNewSemester(true);
+            }}
+            style={styles.addBtn}
+          >
+            <Ionicons name="add" size={24} color={Colors.white} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -162,11 +199,34 @@ export default function PlannerScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {sortedPlans.length > 0 && (
+          <View style={[styles.creditSummary, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.creditSummaryItem}>
+              <Text style={[styles.creditSummaryValue, { color: colors.text }]}>
+                {sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0)}
+              </Text>
+              <Text style={[styles.creditSummaryLabel, { color: colors.textSecondary }]}>Total Planned</Text>
+            </View>
+            <View style={[styles.creditSummaryDivider, { backgroundColor: colors.cardBorder }]} />
+            <View style={styles.creditSummaryItem}>
+              <Text style={[styles.creditSummaryValue, { color: colors.text }]}>{sortedPlans.length}</Text>
+              <Text style={[styles.creditSummaryLabel, { color: colors.textSecondary }]}>Semesters</Text>
+            </View>
+            <View style={[styles.creditSummaryDivider, { backgroundColor: colors.cardBorder }]} />
+            <View style={styles.creditSummaryItem}>
+              <Text style={[styles.creditSummaryValue, { color: Colors.primary }]}>
+                {sortedPlans.length > 0 ? Math.round(sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0) / sortedPlans.length) : 0}
+              </Text>
+              <Text style={[styles.creditSummaryLabel, { color: colors.textSecondary }]}>Avg/Semester</Text>
+            </View>
+          </View>
+        )}
+
         {sortedPlans.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Semesters Planned</Text>
-            <Text style={styles.emptySubtitle}>
+            <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Semesters Planned</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
               Tap the + button to create your first semester plan
             </Text>
           </View>
@@ -178,7 +238,7 @@ export default function PlannerScreen() {
           const isExpanded = expandedSemester === plan.id;
 
           return (
-            <View key={plan.id} style={styles.semesterCard}>
+            <View key={plan.id} style={[styles.semesterCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <Pressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -199,9 +259,9 @@ export default function PlannerScreen() {
                     />
                   </View>
                   <View>
-                    <Text style={styles.semesterName}>{plan.name}</Text>
-                    <Text style={styles.semesterMeta}>
-                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · {credits} credits
+                    <Text style={[styles.semesterName, { color: colors.text }]}>{plan.name}</Text>
+                    <Text style={[styles.semesterMeta, { color: colors.textSecondary }]}>
+                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > 21 ? Colors.danger : credits > 18 ? Colors.warning : colors.textSecondary, fontWeight: credits > 18 ? '700' : '400' }}>{credits} credits</Text>
                     </Text>
                   </View>
                 </View>
@@ -214,13 +274,89 @@ export default function PlannerScreen() {
                   <Ionicons
                     name={isExpanded ? 'chevron-up' : 'chevron-down'}
                     size={18}
-                    color={Colors.textMuted}
+                    color={colors.textMuted}
                   />
                 </View>
               </Pressable>
 
               {isExpanded && (
-                <View style={styles.semesterBody}>
+                <View style={[styles.semesterBody, { borderTopColor: colors.cardBorder }]}>
+                  {(() => {
+                    const creditColor = credits < 15 ? '#10B981' : credits <= 18 ? '#0EA5E9' : '#F59E0B';
+                    const creditLabel = credits < 15 ? 'Light load' : credits <= 18 ? 'Normal load' : 'Heavy load';
+
+                    const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
+                    const avgYear = coursesInPlan.length > 0
+                      ? coursesInPlan.reduce((sum, c) => sum + c.year, 0) / coursesInPlan.length
+                      : 0;
+                    const difficulty = Math.min(5, Math.max(1, Math.round(avgYear)));
+
+                    const coursesWithPrereqs = coursesInPlan.filter(c => c.prerequisites.length > 0);
+                    const coursesWithMetPrereqs = coursesWithPrereqs.filter(c =>
+                      arePrereqsMet(c.id) || profile.completedCourses.includes(c.id)
+                    );
+                    const allMet = coursesWithPrereqs.length === 0 || coursesWithMetPrereqs.length === coursesWithPrereqs.length;
+                    const unmetCount = coursesWithPrereqs.length - coursesWithMetPrereqs.length;
+
+                    return (
+                      <View style={[styles.summaryCard, { backgroundColor: colors.backgroundTertiary, borderColor: colors.cardBorder }]}>
+                        <View style={styles.summaryRow}>
+                          <View style={styles.summaryItem}>
+                            <View style={[styles.summaryIconWrap, { backgroundColor: creditColor + '20' }]}>
+                              <Ionicons name="school-outline" size={16} color={creditColor} />
+                            </View>
+                            <Text style={[styles.summaryValue, { color: creditColor }]}>{credits}</Text>
+                            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{creditLabel}</Text>
+                          </View>
+
+                          <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />
+
+                          <View style={styles.summaryItem}>
+                            <View style={[styles.summaryIconWrap, { backgroundColor: '#A855F720' }]}>
+                              <Ionicons name="speedometer-outline" size={16} color="#A855F7" />
+                            </View>
+                            <View style={styles.difficultyDots}>
+                              {[1, 2, 3, 4, 5].map(dot => (
+                                <View
+                                  key={dot}
+                                  style={[
+                                    styles.difficultyDot,
+                                    { backgroundColor: dot <= difficulty ? '#A855F7' : colors.cardBorder },
+                                  ]}
+                                />
+                              ))}
+                            </View>
+                            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Difficulty</Text>
+                          </View>
+
+                          <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />
+
+                          <View style={styles.summaryItem}>
+                            {allMet ? (
+                              <>
+                                <View style={[styles.summaryIconWrap, { backgroundColor: '#10B98120' }]}>
+                                  <Ionicons name="checkmark-circle-outline" size={16} color="#10B981" />
+                                </View>
+                                <Text style={[styles.summaryValue, { color: '#10B981', fontSize: 11 }]}>All met</Text>
+                                <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Prerequisites</Text>
+                              </>
+                            ) : (
+                              <>
+                                <View style={[styles.summaryIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                                  <Ionicons name="warning-outline" size={16} color="#F59E0B" />
+                                </View>
+                                <Text style={[styles.summaryValue, { color: '#F59E0B', fontSize: 11 }]}>
+                                  {unmetCount}/{coursesWithPrereqs.length}
+                                </Text>
+                                <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Unmet prereqs</Text>
+                              </>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })()}
+
                   {warnings.length > 0 && (
                     <View style={styles.warningsContainer}>
                       {warnings.map((w, i) => (
@@ -237,7 +373,7 @@ export default function PlannerScreen() {
                     if (!course) return null;
                     const status = getCourseStatus(courseId);
                     return (
-                      <View key={courseId} style={styles.plannedCourse}>
+                      <View key={courseId} style={[styles.plannedCourse, { borderBottomColor: colors.cardBorder + '50' }]}>
                         <Pressable
                           onPress={() => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -250,10 +386,10 @@ export default function PlannerScreen() {
                               status === 'in_progress' ? Colors.courseInProgress : Colors.primary
                           }]} />
                           <View style={styles.courseTextContainer}>
-                            <Text style={styles.courseCode}>{course.code}</Text>
-                            <Text style={styles.courseTitle} numberOfLines={1}>{course.title}</Text>
+                            <Text style={[styles.courseCode, { color: colors.textMuted }]}>{course.code}</Text>
+                            <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
                           </View>
-                          <Text style={styles.courseCredits}>{course.credits}cr</Text>
+                          <Text style={[styles.courseCredits, { color: colors.primary }]}>{course.credits}cr</Text>
                         </Pressable>
                         <Pressable
                           onPress={() => {
@@ -261,7 +397,7 @@ export default function PlannerScreen() {
                             removeCourseFromSemester(plan.id, courseId);
                           }}
                         >
-                          <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+                          <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                         </Pressable>
                       </View>
                     );
@@ -304,7 +440,7 @@ export default function PlannerScreen() {
         >
           {[2024, 2025, 2026, 2027, 2028].map(year => (
             <View key={year}>
-              <Text style={styles.yearLabel}>{year}</Text>
+              <Text style={[styles.yearLabel, { color: colors.textSecondary }]}>{year}</Text>
               <View style={styles.seasonRow}>
                 {(['Fall', 'Spring', 'Summer'] as const).map(season => {
                   const exists = profile.semesterPlans.some(p => p.season === season && p.year === year);
@@ -312,16 +448,16 @@ export default function PlannerScreen() {
                     <Pressable
                       key={`${season}-${year}`}
                       onPress={() => !exists && handleCreateSemester(season, year)}
-                      style={[styles.seasonBtn, exists && styles.seasonBtnDisabled]}
+                      style={[styles.seasonBtn, exists && styles.seasonBtnDisabled, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
                       disabled={exists}
                     >
                       <Ionicons
                         name={season === 'Fall' ? 'leaf' : season === 'Spring' ? 'flower' : 'sunny'}
                         size={18}
-                        color={exists ? Colors.textMuted : season === 'Fall' ? '#F59E0B' :
+                        color={exists ? colors.textMuted : season === 'Fall' ? '#F59E0B' :
                           season === 'Spring' ? '#10B981' : '#EF4444'}
                       />
-                      <Text style={[styles.seasonBtnText, exists && styles.seasonBtnTextDisabled]}>
+                      <Text style={[styles.seasonBtnText, exists && styles.seasonBtnTextDisabled, { color: exists ? colors.textMuted : colors.text }]}>
                         {season}
                       </Text>
                     </Pressable>
@@ -357,8 +493,8 @@ export default function PlannerScreen() {
                   style={[styles.addCourseItem, !met && styles.addCourseItemLocked]}
                 >
                   <View style={styles.addCourseItemLeft}>
-                    <Text style={styles.addCourseCode}>{item.code}</Text>
-                    <Text style={styles.addCourseTitle}>{item.title}</Text>
+                    <Text style={[styles.addCourseCode, { color: colors.textMuted }]}>{item.code}</Text>
+                    <Text style={[styles.addCourseTitle, { color: colors.text }]}>{item.title}</Text>
                     {!met && (
                       <View style={styles.lockedRow}>
                         <Ionicons name="lock-closed" size={10} color={Colors.courseLocked} />
@@ -366,7 +502,7 @@ export default function PlannerScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.addCourseCredits, { color: met ? Colors.primary : Colors.textMuted }]}>
+                  <Text style={[styles.addCourseCredits, { color: met ? colors.primary : colors.textMuted }]}>
                     {item.credits}cr
                   </Text>
                 </Pressable>
@@ -416,6 +552,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  shareBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.cardElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
   },
   scrollView: {
     flex: 1,
@@ -699,5 +845,86 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.courseLocked,
     fontFamily: 'Inter_400Regular',
+  },
+  summaryCard: {
+    backgroundColor: Colors.backgroundTertiary,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  summaryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    fontFamily: 'Inter_700Bold',
+  },
+  summaryLabel: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+  },
+  summaryDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: Colors.cardBorder,
+  },
+  difficultyDots: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 2,
+  },
+  difficultyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  creditSummary: {
+    flexDirection: 'row',
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    alignItems: 'center',
+  },
+  creditSummaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  creditSummaryDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: Colors.cardBorder,
+  },
+  creditSummaryValue: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+  },
+  creditSummaryLabel: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 2,
   },
 });

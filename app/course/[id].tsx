@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator
+  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, TextInput
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { TermInfo } from '@/components/TermInfo';
 import { useAcademic } from '@/lib/academic-context';
 import { getApiUrl } from '@/lib/query-client';
@@ -28,8 +29,9 @@ export default function CourseDetailScreen() {
   const {
     courses, getCourseStatus, getPrerequisitesFor, getUnlockedBy,
     getMissingPrereqs, toggleCourseCompleted, toggleCourseInProgress,
-    arePrereqsMet, profile,
+    arePrereqsMet, profile, setCourseNote, getCourseNote, getPrerequisiteChain,
   } = useAcademic();
+  const { colors } = useTheme();
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
   // Only fetch from server if server is configured
@@ -54,6 +56,12 @@ export default function CourseDetailScreen() {
   const offerings: Offering[] = courseDetail?.offerings || [];
   const grade = profile.grades.find(g => g.courseId === id);
 
+  const courseId = id!;
+  const chain = getPrerequisiteChain(courseId);
+  const [noteText, setNoteText] = useState('');
+  const note = getCourseNote(courseId);
+  useEffect(() => { setNoteText(note); }, [note]);
+
   const { cleanDescription, corequisites } = useMemo(() => {
     if (!course) return { cleanDescription: '', corequisites: [] };
 
@@ -77,34 +85,34 @@ export default function CourseDetailScreen() {
 
   if (!course) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset, backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { paddingTop: insets.top + webTopInset + 8 }]}>
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.back();
           }}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
         >
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.topBarTitle} numberOfLines={1}>{course.code}</Text>
+        <Text style={[styles.topBarTitle, { color: colors.text }]} numberOfLines={1}>{course.code}</Text>
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.dismissAll();
             router.replace('/');
           }}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
         >
-          <Ionicons name="home-outline" size={20} color={Colors.text} />
+          <Ionicons name="home-outline" size={20} color={colors.text} />
         </Pressable>
       </View>
 
@@ -114,7 +122,7 @@ export default function CourseDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
-          colors={[config.bgColor, Colors.background]}
+          colors={[config.bgColor, colors.background]}
           style={styles.heroGradient}
         >
           <View style={[styles.statusChip, { backgroundColor: config.color + '20' }]}>
@@ -122,22 +130,22 @@ export default function CourseDetailScreen() {
             <Text style={[styles.statusLabel, { color: config.color }]}>{config.label}</Text>
           </View>
 
-          <Text style={styles.courseTitle}>{course.title}</Text>
-          <Text style={styles.courseCode}>{course.code}</Text>
+          <Text style={[styles.courseTitle, { color: colors.text }]}>{course.title}</Text>
+          <Text style={[styles.courseCode, { color: colors.textSecondary }]}>{course.code}</Text>
 
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <MaterialCommunityIcons name="school" size={16} color={Colors.textSecondary} />
-              <Text style={styles.metaText}>{course.credits} Credits</Text>
+              <MaterialCommunityIcons name="school" size={16} color={colors.textSecondary} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.credits} Credits</Text>
               <TermInfo term="Credits" size={14} />
             </View>
             <View style={styles.metaItem}>
-              <Ionicons name="folder-outline" size={16} color={Colors.textSecondary} />
-              <Text style={styles.metaText}>{course.category}</Text>
+              <Ionicons name="folder-outline" size={16} color={colors.textSecondary} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.category}</Text>
             </View>
             <View style={styles.metaItem}>
-              <Ionicons name="calendar-outline" size={16} color={Colors.textSecondary} />
-              <Text style={styles.metaText}>Year {course.year}, Sem {course.semester}</Text>
+              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>Year {course.year}, Sem {course.semester}</Text>
             </View>
           </View>
 
@@ -150,8 +158,8 @@ export default function CourseDetailScreen() {
         </LinearGradient>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{cleanDescription}</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>{cleanDescription}</Text>
         </View>
 
         <View style={styles.actionRow}>
@@ -160,16 +168,16 @@ export default function CourseDetailScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               toggleCourseInProgress(course.id);
             }}
-            style={[styles.actionBtn,
+            style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
             status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '20', borderColor: Colors.courseInProgress }
             ]}
           >
             <Ionicons
               name="time"
               size={18}
-              color={status === 'in_progress' ? Colors.courseInProgress : Colors.textSecondary}
+              color={status === 'in_progress' ? Colors.courseInProgress : colors.textSecondary}
             />
-            <Text style={[styles.actionBtnText,
+            <Text style={[styles.actionBtnText, { color: colors.textSecondary },
             status === 'in_progress' && { color: Colors.courseInProgress }
             ]}>In Progress</Text>
           </Pressable>
@@ -178,16 +186,16 @@ export default function CourseDetailScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               toggleCourseCompleted(course.id);
             }}
-            style={[styles.actionBtn,
+            style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
             status === 'completed' && { backgroundColor: Colors.courseCompleted + '20', borderColor: Colors.courseCompleted }
             ]}
           >
             <Ionicons
               name="checkmark-circle"
               size={18}
-              color={status === 'completed' ? Colors.courseCompleted : Colors.textSecondary}
+              color={status === 'completed' ? Colors.courseCompleted : colors.textSecondary}
             />
-            <Text style={[styles.actionBtnText,
+            <Text style={[styles.actionBtnText, { color: colors.textSecondary },
             status === 'completed' && { color: Colors.courseCompleted }
             ]}>Completed</Text>
           </Pressable>
@@ -196,7 +204,7 @@ export default function CourseDetailScreen() {
         {prereqs.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Prerequisites</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Prerequisites</Text>
               <TermInfo term="Prerequisites" />
             </View>
             {prereqs.map((prereq: any) => {
@@ -209,14 +217,14 @@ export default function CourseDetailScreen() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     router.push({ pathname: '/course/[id]', params: { id: prereq.id } });
                   }}
-                  style={styles.prereqCard}
+                  style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
                 >
                   <View style={[styles.prereqDot, {
                     backgroundColor: pStatus === 'completed' ? Colors.courseCompleted : Colors.courseLocked
                   }]} />
                   <View style={styles.prereqInfo}>
-                    <Text style={styles.prereqCode}>{prereq.code}</Text>
-                    <Text style={styles.prereqTitle}>{prereq.title}</Text>
+                    <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{prereq.code}</Text>
+                    <Text style={[styles.prereqTitle, { color: colors.text }]}>{prereq.title}</Text>
                   </View>
                   {isMissing && (
                     <View style={styles.missingBadge}>
@@ -236,7 +244,7 @@ export default function CourseDetailScreen() {
         {corequisites.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Corequisites</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Corequisites</Text>
               <TermInfo term="Corequisites" />
             </View>
             {corequisites.map(coreq => {
@@ -248,17 +256,17 @@ export default function CourseDetailScreen() {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     router.push({ pathname: '/course/[id]', params: { id: coreq.id } });
                   }}
-                  style={styles.prereqCard}
+                  style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
                 >
                   <View style={[styles.prereqDot, {
                     backgroundColor: cStatus === 'completed' ? Colors.courseCompleted :
                       cStatus === 'in_progress' ? Colors.courseInProgress : Colors.courseLocked
                   }]} />
                   <View style={styles.prereqInfo}>
-                    <Text style={styles.prereqCode}>{coreq.code}</Text>
-                    <Text style={styles.prereqTitle}>{coreq.title}</Text>
+                    <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{coreq.code}</Text>
+                    <Text style={[styles.prereqTitle, { color: colors.text }]}>{coreq.title}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </Pressable>
               );
             })}
@@ -268,10 +276,10 @@ export default function CourseDetailScreen() {
         {unlocks.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Unlocks</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Unlocks</Text>
               <TermInfo term="Unlocks" />
             </View>
-            <Text style={styles.sectionSubtitle}>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
               Completing this course enables {unlocks.length} more course{unlocks.length > 1 ? 's' : ''}
             </Text>
             {unlocks.map(unlock => (
@@ -281,14 +289,14 @@ export default function CourseDetailScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   router.push({ pathname: '/course/[id]', params: { id: unlock.id } });
                 }}
-                style={styles.prereqCard}
+                style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
               >
                 <View style={[styles.prereqDot, { backgroundColor: Colors.primary }]} />
                 <View style={styles.prereqInfo}>
-                  <Text style={styles.prereqCode}>{unlock.code}</Text>
-                  <Text style={styles.prereqTitle}>{unlock.title}</Text>
+                  <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{unlock.code}</Text>
+                  <Text style={[styles.prereqTitle, { color: colors.text }]}>{unlock.title}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
               </Pressable>
             ))}
           </View>
@@ -296,9 +304,9 @@ export default function CourseDetailScreen() {
 
         {offerings.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Offerings</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Offerings</Text>
             {offerings.map((offering: Offering, idx: number) => (
-              <View key={idx} style={styles.offeringCard}>
+              <View key={idx} style={[styles.offeringCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <View style={styles.offeringHeader}>
                   <View style={styles.offeringBadge}>
                     <Ionicons
@@ -307,24 +315,65 @@ export default function CourseDetailScreen() {
                       color={offering.semester === 'Fall' ? '#F59E0B' :
                         offering.semester === 'Spring' ? '#10B981' : '#EF4444'}
                     />
-                    <Text style={styles.offeringSemester}>{offering.semester}</Text>
+                    <Text style={[styles.offeringSemester, { color: colors.text }]}>{offering.semester}</Text>
                   </View>
-                  <Text style={styles.offeringCampus}>{offering.campus} Campus</Text>
+                  <Text style={[styles.offeringCampus, { color: colors.textSecondary }]}>{offering.campus} Campus</Text>
                 </View>
                 <View style={styles.offeringDetails}>
                   <View style={styles.offeringDetail}>
-                    <Ionicons name="person-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.offeringText}>{offering.instructor}</Text>
+                    <Ionicons name="person-outline" size={12} color={colors.textMuted} />
+                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.instructor}</Text>
                   </View>
                   <View style={styles.offeringDetail}>
-                    <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.offeringText}>{offering.dayOfWeek} {offering.startTime}-{offering.endTime}</Text>
+                    <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.dayOfWeek} {offering.startTime}-{offering.endTime}</Text>
                   </View>
                   <View style={styles.offeringDetail}>
-                    <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-                    <Text style={styles.offeringText}>{offering.room}</Text>
+                    <Ionicons name="location-outline" size={12} color={colors.textMuted} />
+                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.room}</Text>
                   </View>
                 </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {status === 'locked' && chain.length > 0 && (
+          <View style={[styles.chainSection, { backgroundColor: colors.card, borderColor: Colors.warning + '30' }]}>
+            <Text style={styles.chainTitle}>
+              <Ionicons name="git-branch-outline" size={16} color={Colors.warning} /> Path to Unlock
+            </Text>
+            <Text style={[styles.chainSubtitle, { color: colors.textMuted }]}>Complete these courses in order:</Text>
+            {chain.map((level, levelIndex) => (
+              <View key={levelIndex} style={styles.chainLevel}>
+                <View style={styles.chainLevelHeader}>
+                  <View style={styles.chainStepBadge}>
+                    <Text style={styles.chainStepText}>Step {levelIndex + 1}</Text>
+                  </View>
+                  {levelIndex < chain.length - 1 && (
+                    <View style={styles.chainConnector}>
+                      <Ionicons name="arrow-down" size={14} color={colors.textMuted} />
+                    </View>
+                  )}
+                </View>
+                {level.map(course => {
+                  const courseStatus = getCourseStatus(course.id);
+                  return (
+                    <Pressable
+                      key={course.id}
+                      style={styles.chainCourse}
+                      onPress={() => router.push(`/course/${course.id}`)}
+                    >
+                      <Ionicons
+                        name={courseStatus === 'completed' ? 'checkmark-circle' : courseStatus === 'available' ? 'arrow-forward-circle' : 'lock-closed'}
+                        size={16}
+                        color={courseStatus === 'completed' ? Colors.courseCompleted : courseStatus === 'available' ? Colors.primary : Colors.courseLocked}
+                      />
+                      <Text style={[styles.chainCourseCode, { color: colors.text }]}>{course.code}</Text>
+                      <Text style={[styles.chainCourseTitle, { color: colors.textSecondary }]} numberOfLines={1}>{course.title}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             ))}
           </View>
@@ -335,13 +384,30 @@ export default function CourseDetailScreen() {
             <Ionicons name="bulb-outline" size={18} color={Colors.warning} />
             <View style={styles.autoSuggestContent}>
               <Text style={styles.autoSuggestTitle}>Prerequisite Path</Text>
-              <Text style={styles.autoSuggestText}>
+              <Text style={[styles.autoSuggestText, { color: colors.textSecondary }]}>
                 To unlock this course, you need to complete:{'\n'}
                 {missingPrereqs.map(m => m.code).join(' → ')} → {course.code}
               </Text>
             </View>
           </View>
         )}
+
+        <View style={[styles.notesSection, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <Text style={[styles.notesSectionTitle, { color: colors.textSecondary }]}>
+            <Ionicons name="create-outline" size={16} color={colors.textSecondary} /> Personal Notes
+          </Text>
+          <TextInput
+            style={[styles.notesInput, { color: colors.text, backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder }]}
+            placeholder="Add your notes about this course..."
+            placeholderTextColor={colors.textMuted}
+            value={noteText}
+            onChangeText={setNoteText}
+            onBlur={() => setCourseNote(courseId, noteText)}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
       </ScrollView>
     </View>
   );
@@ -621,5 +687,95 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     lineHeight: 18,
+  },
+  chainSection: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+  },
+  chainTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.warning,
+    marginBottom: 4,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  chainSubtitle: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginBottom: 12,
+    fontFamily: 'Inter_400Regular',
+  },
+  chainLevel: {
+    marginBottom: 12,
+  },
+  chainLevelHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 6,
+  },
+  chainStepBadge: {
+    backgroundColor: Colors.warning + '20',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  chainStepText: {
+    fontSize: 11,
+    color: Colors.warning,
+    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  chainConnector: {
+    marginLeft: 8,
+  },
+  chainCourse: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  chainCourseCode: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_600SemiBold',
+    minWidth: 70,
+  },
+  chainCourseTitle: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    flex: 1,
+  },
+  notesSection: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  notesSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    marginBottom: 10,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  notesInput: {
+    fontSize: 14,
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    backgroundColor: Colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 80,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
   },
 });

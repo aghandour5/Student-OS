@@ -14,6 +14,7 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useBottomSheetDrag } from '@/lib/useBottomSheetDrag';
 import Colors from '@/constants/colors';
+import { useTheme } from '@/lib/theme-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -37,6 +38,7 @@ export function BottomSheet({
 }: BottomSheetProps) {
     const { gesture, animatedStyle, reset } = useBottomSheetDrag(visible, onClose);
     const insets = useSafeAreaInsets();
+    const { colors } = useTheme();
     const [keyboardHeight, setKeyboardHeight] = useState(0);
 
     useEffect(() => {
@@ -92,20 +94,21 @@ export function BottomSheet({
                             animatedStyle,
                             {
                                 paddingBottom: totalBottomPadding,
-                                maxHeight: SCREEN_HEIGHT * 0.85 // Use numeric percentage
+                                maxHeight: SCREEN_HEIGHT * 0.85,
+                                backgroundColor: colors.backgroundSecondary,
                             }
                         ]}
                     >
                         <GestureDetector gesture={gesture}>
                             <View style={styles.handleHitArea}>
-                                <View style={styles.handle} />
+                                <View style={[styles.handle, { backgroundColor: colors.cardBorder }]} />
                             </View>
                         </GestureDetector>
 
                         {(title || subtitle) && (
                             <View style={styles.header}>
-                                {title && <Text style={styles.title}>{title}</Text>}
-                                {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+                                {title && <Text style={[styles.title, { color: colors.text }]}>{title}</Text>}
+                                {subtitle && <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>}
                             </View>
                         )}
 

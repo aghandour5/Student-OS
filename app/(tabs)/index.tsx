@@ -8,13 +8,42 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import Svg, { Circle } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
+import { useTheme } from '@/lib/theme-context';
 import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
 import type { CourseWithPrereqs } from '@shared/schema';
 
 import { TermInfo } from '@/components/TermInfo';
+
+const CATEGORY_ABBREV: Record<string, string> = {
+  'Foundation': 'Found',
+  'Mathematics': 'Math',
+  'Science': 'Sci',
+  'Computer Engineering': 'CE',
+  'Computer Science': 'CS',
+  'Electrical Engineering': 'EE',
+  'Engineering Core': 'Eng',
+  'General Education': 'GenEd',
+  'Elective': 'Elec',
+  'Capstone': 'Cap',
+};
+
+const SMART_TIPS = [
+  'Tip: Complete prerequisites early to unlock more courses.',
+  'Tip: Plan 15-18 credits per semester for on-time graduation.',
+  'Tip: Check with your advisor before dropping required courses.',
+  'Tip: Balance difficult courses with lighter ones each semester.',
+];
+
+const TIP_BORDER_COLORS = [
+  Colors.categoryColors['Computer Science'],
+  Colors.categoryColors['Mathematics'],
+  Colors.categoryColors['Electrical Engineering'],
+  Colors.categoryColors['Capstone'],
+];
 
 function OfflineBanner({ topInset }: { topInset: number }) {
   return (
@@ -32,11 +61,52 @@ function getGPAColor(gpa: number): string {
   return Colors.gpaLow;
 }
 
+function SmallProgressRing({ progress, size, strokeWidth, color }: {
+  progress: number; size: number; strokeWidth: number; color: string;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.min(Math.max(progress, 0), 1);
+  const offset = circumference * (1 - clamped);
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={size} height={size} style={{ position: 'absolute' as any }}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={Colors.cardBorder}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          rotation="-90"
+          origin={`${size / 2}, ${size / 2}`}
+        />
+      </Svg>
+      <Text style={{ fontSize: 10, color: Colors.text, fontFamily: 'Inter_600SemiBold' }}>
+        {Math.round(clamped * 100)}%
+      </Text>
+    </View>
+  );
+}
+
 function SearchResultItem({ course, status, onPress }: {
   course: CourseWithPrereqs;
   status: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   const statusColor = status === 'completed' ? Colors.courseCompleted
     : status === 'in_progress' ? Colors.courseInProgress
       : status === 'available' ? Colors.primary
@@ -45,15 +115,15 @@ function SearchResultItem({ course, status, onPress }: {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.searchResultItem, { opacity: pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [styles.searchResultItem, { opacity: pressed ? 0.7 : 1, borderBottomColor: colors.cardBorder }]}
     >
       <View style={[styles.searchResultDot, { backgroundColor: statusColor }]} />
       <View style={styles.searchResultInfo}>
-        <Text style={styles.searchResultCode}>{course.code}</Text>
-        <Text style={styles.searchResultTitle} numberOfLines={1}>{course.title}</Text>
+        <Text style={[styles.searchResultCode, { color: colors.textMuted }]}>{course.code}</Text>
+        <Text style={[styles.searchResultTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
       </View>
-      <Text style={styles.searchResultCredits}>{course.credits}cr</Text>
-      <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+      <Text style={[styles.searchResultCredits, { color: colors.textSecondary }]}>{course.credits}cr</Text>
+      <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -64,25 +134,56 @@ export default function DashboardScreen() {
     profile, courses, isLoading, isOnline,
     totalCredits, completedCredits, inProgressCredits,
     calculateGPA, getCourseStatus,
+    toggleYearCompleted, isYearCompleted,
   } = useAcademic();
+
+  const { isDark, toggleTheme, colors } = useTheme();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [dismissedTips, setDismissedTips] = useState<number[]>([]);
   const inputRef = useRef<TextInput>(null);
 
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
   const gpa = calculateGPA();
   const progress = totalCredits > 0 ? completedCredits / totalCredits : 0;
 
+  const categoryNames = useMemo(() => {
+    return Object.keys(Colors.categoryColors);
+  }, []);
+
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { total: number; completed: number; totalCredits: number; completedCredits: number }> = {};
+    for (const name of categoryNames) {
+      stats[name] = { total: 0, completed: 0, totalCredits: 0, completedCredits: 0 };
+    }
+    courses.forEach(c => {
+      const cat = c.category || '';
+      if (!stats[cat]) return;
+      stats[cat].total += 1;
+      stats[cat].totalCredits += c.credits;
+      if (getCourseStatus(c.id) === 'completed') {
+        stats[cat].completed += 1;
+        stats[cat].completedCredits += c.credits;
+      }
+    });
+    return stats;
+  }, [courses, getCourseStatus, categoryNames]);
+
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase().trim();
-    return courses.filter(c =>
+    let filtered = courses.filter(c =>
       c.code.toLowerCase().includes(q) ||
       c.title.toLowerCase().includes(q) ||
       c.category?.toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [searchQuery, courses]);
+    );
+    if (activeFilter !== 'All') {
+      filtered = filtered.filter(c => c.category === activeFilter);
+    }
+    return filtered.slice(0, 8);
+  }, [searchQuery, courses, activeFilter]);
 
   const showResults = searchFocused && searchQuery.trim().length > 0;
 
@@ -99,6 +200,25 @@ export default function DashboardScreen() {
     inputRef.current?.focus();
   }, []);
 
+  const currentTip = useMemo(() => {
+    const available = SMART_TIPS.map((t, i) => i).filter(i => !dismissedTips.includes(i));
+    if (available.length === 0) return null;
+    return available[0];
+  }, [dismissedTips]);
+
+  const dismissTip = useCallback((index: number) => {
+    setDismissedTips(prev => [...prev, index]);
+  }, []);
+
+  const milestones = useMemo(() => [
+    { threshold: 0, label: 'Start Your Journey' },
+    { threshold: 30, label: 'Freshman Complete' },
+    { threshold: 60, label: 'Sophomore Complete' },
+    { threshold: 90, label: 'Junior Complete' },
+    { threshold: 120, label: 'Senior Complete' },
+    { threshold: totalCredits, label: 'Graduation!' },
+  ], [totalCredits]);
+
   const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
   const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
   const completedCoursesList = courses.filter(c => getCourseStatus(c.id) === 'completed');
@@ -106,43 +226,43 @@ export default function DashboardScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset }]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + webTopInset, backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {!isOnline && <OfflineBanner topInset={insets.top} />}
-      <View style={[styles.fixedHeader, { paddingTop: !isOnline ? insets.top + 8 : insets.top + webTopInset + 16 }]}>
+      <View style={[styles.fixedHeader, { paddingTop: !isOnline ? insets.top + 8 : insets.top + webTopInset + 16, backgroundColor: colors.background }]}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.greeting}>Computer Engineering</Text>
-            <Text style={styles.subtitle}>Year {Math.ceil((completedCredits / totalCredits * 4) || 1)} of 4</Text>
+            <Text style={[styles.greeting, { color: colors.text }]}>Computer Engineering</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Year {Math.ceil((completedCredits / totalCredits * 4) || 1)} of 4</Text>
           </View>
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/tools');
+              toggleTheme();
             }}
-            style={({ pressed }) => [styles.settingsBtn, { opacity: pressed ? 0.7 : 1 }]}
+            style={({ pressed }) => [styles.settingsBtn, { opacity: pressed ? 0.7 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
           >
-            <Ionicons name="settings-outline" size={22} color={Colors.textSecondary} />
+            <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.textSecondary} />
           </Pressable>
         </View>
 
         <View style={styles.searchContainer}>
           <Pressable
-            style={[styles.searchBar, searchFocused && styles.searchBarFocused]}
+            style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.cardBorder }, searchFocused && { borderColor: colors.primary + '40', backgroundColor: colors.cardElevated, shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 8 }]}
             onPress={() => inputRef.current?.focus()}
           >
-            <Ionicons name="search" size={18} color={searchFocused ? Colors.primary : Colors.textMuted} />
+            <Ionicons name="search" size={18} color={searchFocused ? colors.primary : colors.textMuted} />
             <TextInput
               ref={inputRef}
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search courses..."
-              placeholderTextColor={Colors.textMuted}
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               onFocus={() => setSearchFocused(true)}
@@ -154,12 +274,13 @@ export default function DashboardScreen() {
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={clearSearch} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
               </Pressable>
             )}
           </Pressable>
+
           {showResults && (
-            <View style={styles.searchResults}>
+            <View style={[styles.searchResults, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
               {searchResults.length > 0 ? (
                 <ScrollView
                   style={styles.searchResultsScroll}
@@ -177,8 +298,8 @@ export default function DashboardScreen() {
                 </ScrollView>
               ) : (
                 <View style={styles.searchEmpty}>
-                  <Ionicons name="search-outline" size={20} color={Colors.textMuted} />
-                  <Text style={styles.searchEmptyText}>No courses found</Text>
+                  <Ionicons name="search-outline" size={20} color={colors.textMuted} />
+                  <Text style={[styles.searchEmptyText, { color: colors.textMuted }]}>No courses found</Text>
                 </View>
               )}
             </View>
@@ -198,8 +319,8 @@ export default function DashboardScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
-          colors={['#0F2847', '#0B1E3D', '#0B1426']}
-          style={styles.gpaCard}
+          colors={isDark ? ['#0F2847', '#0B1E3D', '#0B1426'] : ['#E0F2FE', '#DBEAFE', '#F0F9FF']}
+          style={[styles.gpaCard, { borderColor: colors.cardBorder }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
@@ -208,21 +329,21 @@ export default function DashboardScreen() {
               progress={progress}
               size={110}
               strokeWidth={8}
-              color={Colors.primary}
+              color={colors.primary}
               label={`${Math.round(progress * 100)}%`}
               sublabel="Complete"
             />
             <View style={styles.gpaInfo}>
               <View style={styles.gpaLabelRow}>
-                <Text style={styles.gpaLabel}>Cumulative GPA</Text>
+                <Text style={[styles.gpaLabel, { color: colors.textSecondary }]}>Cumulative GPA</Text>
                 <TermInfo term="Cumulative GPA" size={14} />
               </View>
-              <Text style={[styles.gpaValue, { color: gpa > 0 ? getGPAColor(gpa) : Colors.textSecondary }]}>
+              <Text style={[styles.gpaValue, { color: gpa > 0 ? getGPAColor(gpa) : colors.textSecondary }]}>
                 {gpa > 0 ? gpa.toFixed(2) : '--'}
               </Text>
               <View style={styles.creditRow}>
-                <MaterialCommunityIcons name="school-outline" size={14} color={Colors.textSecondary} />
-                <Text style={styles.creditText}>
+                <MaterialCommunityIcons name="school-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.creditText, { color: colors.textSecondary }]}>
                   {completedCredits}/{totalCredits} credits
                 </Text>
               </View>
@@ -245,6 +366,7 @@ export default function DashboardScreen() {
             label="Completed"
             value={`${completedCoursesList.length}`}
             small
+            onPress={() => router.push({ pathname: '/(tabs)/map', params: { filter: 'completed' } })}
           />
           <StatCard
             icon="time"
@@ -252,6 +374,7 @@ export default function DashboardScreen() {
             label="In Progress"
             value={`${inProgressCourses.length}`}
             small
+            onPress={() => router.push({ pathname: '/(tabs)/map', params: { filter: 'in_progress' } })}
           />
           <StatCard
             icon="arrow-forward-circle"
@@ -259,6 +382,7 @@ export default function DashboardScreen() {
             label="Available"
             value={`${availableCourses.length}`}
             small
+            onPress={() => router.push({ pathname: '/(tabs)/map', params: { filter: 'available' } })}
           />
           <StatCard
             icon="lock-closed"
@@ -266,12 +390,125 @@ export default function DashboardScreen() {
             label="Locked"
             value={`${lockedCourses.length}`}
             small
+            onPress={() => router.push({ pathname: '/(tabs)/map', params: { filter: 'locked' } })}
           />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Mark Year as Completed</Text>
+          <View style={styles.yearCheckboxRow}>
+            {[0, 1, 2, 3].map(year => {
+              const checked = isYearCompleted(year);
+              const yearCourseCount = courses.filter(c => c.year === year).length;
+              const yearLabel = year === 0 ? 'Foundation' : `Year ${year}`;
+              return (
+                <Pressable
+                  key={year}
+                  style={[styles.yearCheckbox, { backgroundColor: colors.card, borderColor: colors.cardBorder }, checked && styles.yearCheckboxChecked]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    toggleYearCompleted(year);
+                  }}
+                >
+                  <Ionicons
+                    name={checked ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={checked ? Colors.courseCompleted : colors.textSecondary}
+                  />
+                  <View>
+                    <Text style={[styles.yearCheckboxLabel, { color: colors.textSecondary }, checked && styles.yearCheckboxLabelChecked]}>{yearLabel}</Text>
+                    <Text style={[styles.yearCheckboxSub, { color: colors.textMuted }]}>{yearCourseCount} courses</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Smart Tips */}
+        {currentTip !== null && (
+          <View style={[styles.tipCard, { borderLeftColor: TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length], backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.tipContent}>
+              <Ionicons name="bulb-outline" size={18} color={TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length]} />
+              <Text style={[styles.tipText, { color: colors.text }]}>{SMART_TIPS[currentTip]}</Text>
+            </View>
+            <Pressable onPress={() => dismissTip(currentTip)} hitSlop={8} style={styles.tipDismiss}>
+              <Ionicons name="close" size={18} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* Milestone Markers */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Degree Milestones</Text>
+          <View style={[styles.milestoneContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            {milestones.map((m, i) => {
+              const achieved = completedCredits >= m.threshold;
+              const isLast = i === milestones.length - 1;
+              return (
+                <View key={i} style={styles.milestoneRow}>
+                  <View style={styles.milestoneLeftCol}>
+                    <View style={[
+                      styles.milestoneDot,
+                      { backgroundColor: achieved ? Colors.courseCompleted : colors.cardBorder },
+                    ]} />
+                    {!isLast && (
+                      <View style={[
+                        styles.milestoneLine,
+                        { backgroundColor: achieved ? Colors.courseCompleted + '40' : colors.cardBorder },
+                      ]} />
+                    )}
+                  </View>
+                  <View style={styles.milestoneInfo}>
+                    <Text style={[styles.milestoneLabel, { color: colors.text }, achieved && { color: Colors.courseCompleted }]}>
+                      {m.label}
+                    </Text>
+                    <Text style={[styles.milestoneCredits, { color: colors.textMuted }]}>{m.threshold} credits</Text>
+                  </View>
+                  {achieved && (
+                    <Ionicons name="checkmark-circle" size={18} color={Colors.courseCompleted} />
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Graduation Progress</Text>
+          <View style={[styles.gradCountdown, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.gradCountdownRow}>
+              <View style={styles.gradCountdownItem}>
+                <Text style={[styles.gradCountdownValue, { color: colors.text }]}>{courses.length - completedCoursesList.length}</Text>
+                <Text style={[styles.gradCountdownLabel, { color: colors.textSecondary }]}>Courses Left</Text>
+              </View>
+              <View style={[styles.gradCountdownDivider, { backgroundColor: colors.cardBorder }]} />
+              <View style={styles.gradCountdownItem}>
+                <Text style={[styles.gradCountdownValue, { color: colors.text }]}>{totalCredits - completedCredits}</Text>
+                <Text style={[styles.gradCountdownLabel, { color: colors.textSecondary }]}>Credits Left</Text>
+              </View>
+              <View style={[styles.gradCountdownDivider, { backgroundColor: colors.cardBorder }]} />
+              <View style={styles.gradCountdownItem}>
+                <Text style={[styles.gradCountdownValue, { color: colors.primary }]}>
+                  {completedCoursesList.length > 0
+                    ? Math.ceil((courses.length - completedCoursesList.length) / Math.max(1, Math.ceil(completedCoursesList.length / 2)))
+                    : '~8'}
+                </Text>
+                <Text style={[styles.gradCountdownLabel, { color: colors.textSecondary }]}>Semesters Est.</Text>
+              </View>
+            </View>
+            <View style={[styles.gradProgressBar, { backgroundColor: colors.cardBorder }]}>
+              <View style={[styles.gradProgressFill, { width: `${Math.round(progress * 100)}%` }]} />
+            </View>
+            <Text style={[styles.gradProgressText, { color: colors.textSecondary }]}>
+              {Math.round(progress * 100)}% toward graduation
+            </Text>
+          </View>
         </View>
 
         {inProgressCourses.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Currently Enrolled</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Currently Enrolled</Text>
             {inProgressCourses.map(course => (
               <Pressable
                 key={course.id}
@@ -279,15 +516,15 @@ export default function DashboardScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   router.push({ pathname: '/course/[id]', params: { id: course.id } });
                 }}
-                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1 }]}
+                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
               >
                 <View style={[styles.enrolledDot, { backgroundColor: Colors.courseInProgress }]} />
                 <View style={styles.enrolledInfo}>
-                  <Text style={styles.enrolledCode}>{course.code}</Text>
-                  <Text style={styles.enrolledTitle}>{course.title}</Text>
+                  <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
+                  <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
                 </View>
                 <Text style={styles.enrolledCredits}>{course.credits}cr</Text>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
               </Pressable>
             ))}
           </View>
@@ -296,8 +533,8 @@ export default function DashboardScreen() {
         {availableCourses.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Ready to Take</Text>
-              <Text style={styles.sectionCount}>{availableCourses.length} courses</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Ready to Take</Text>
+              <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{availableCourses.length} courses</Text>
             </View>
             {availableCourses.slice(0, 5).map(course => (
               <Pressable
@@ -306,15 +543,15 @@ export default function DashboardScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   router.push({ pathname: '/course/[id]', params: { id: course.id } });
                 }}
-                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1 }]}
+                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
               >
-                <View style={[styles.enrolledDot, { backgroundColor: Colors.primary }]} />
+                <View style={[styles.enrolledDot, { backgroundColor: colors.primary }]} />
                 <View style={styles.enrolledInfo}>
-                  <Text style={styles.enrolledCode}>{course.code}</Text>
-                  <Text style={styles.enrolledTitle}>{course.title}</Text>
+                  <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
+                  <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
                 </View>
-                <Text style={[styles.enrolledCredits, { color: Colors.primary }]}>{course.credits}cr</Text>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                <Text style={[styles.enrolledCredits, { color: colors.primary }]}>{course.credits}cr</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
               </Pressable>
             ))}
             {availableCourses.length > 5 && (
@@ -326,7 +563,7 @@ export default function DashboardScreen() {
                 style={styles.seeMoreBtn}
               >
                 <Text style={styles.seeMoreText}>View all on Map</Text>
-                <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
+                <Ionicons name="arrow-forward" size={14} color={colors.primary} />
               </Pressable>
             )}
           </View>
@@ -340,19 +577,19 @@ export default function DashboardScreen() {
           style={({ pressed }) => [styles.mapCTA, { opacity: pressed ? 0.9 : 1 }]}
         >
           <LinearGradient
-            colors={[Colors.primary + '30', Colors.primaryDark + '15']}
-            style={styles.mapCTAGradient}
+            colors={[colors.primary + '30', colors.primaryDark + '15']}
+            style={[styles.mapCTAGradient, { borderColor: colors.primary + '30' }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <View style={styles.mapCTAIcon}>
-              <MaterialCommunityIcons name="graph-outline" size={28} color={Colors.primary} />
+            <View style={[styles.mapCTAIcon, { backgroundColor: colors.primary + '20' }]}>
+              <MaterialCommunityIcons name="graph-outline" size={28} color={colors.primary} />
             </View>
             <View style={styles.mapCTAContent}>
-              <Text style={styles.mapCTATitle}>Degree Mind Map</Text>
-              <Text style={styles.mapCTASubtitle}>Visualize your academic journey</Text>
+              <Text style={[styles.mapCTATitle, { color: colors.text }]}>Degree Mind Map</Text>
+              <Text style={[styles.mapCTASubtitle, { color: colors.textSecondary }]}>Visualize your academic journey</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </LinearGradient>
         </Pressable>
       </ScrollView>
@@ -437,9 +674,37 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     ...Platform.select({ web: { outlineStyle: 'none' } }) as any,
   },
+  filterChipsRow: {
+    marginTop: 10,
+    maxHeight: 36,
+  },
+  filterChipsContent: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary + '30',
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_500Medium',
+  },
+  filterChipTextActive: {
+    color: Colors.primary,
+  },
   searchResults: {
     position: 'absolute' as any,
-    top: 50,
+    top: 90,
     left: 0,
     right: 0,
     backgroundColor: Colors.cardElevated,
@@ -570,6 +835,114 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 20,
   },
+  yearCheckboxRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  yearCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flex: 1,
+    minWidth: '45%' as any,
+  },
+  yearCheckboxChecked: {
+    borderColor: Colors.courseCompleted + '60',
+    backgroundColor: Colors.courseCompleted + '10',
+  },
+  yearCheckboxLabel: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.textSecondary,
+  },
+  yearCheckboxLabelChecked: {
+    color: Colors.courseCompleted,
+  },
+  yearCheckboxSub: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  tipCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    borderLeftWidth: 4,
+    padding: 14,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tipContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 18,
+  },
+  tipDismiss: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  milestoneContainer: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  milestoneRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minHeight: 48,
+  },
+  milestoneLeftCol: {
+    alignItems: 'center',
+    width: 24,
+    marginRight: 12,
+  },
+  milestoneDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  milestoneLine: {
+    width: 2,
+    flex: 1,
+    marginTop: 4,
+    minHeight: 24,
+  },
+  milestoneInfo: {
+    flex: 1,
+    paddingBottom: 12,
+  },
+  milestoneLabel: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  milestoneCredits: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 2,
+  },
   section: {
     marginBottom: 20,
   },
@@ -679,5 +1052,56 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     marginTop: 2,
+  },
+  gradCountdown: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  gradCountdownRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 14,
+  },
+  gradCountdownItem: {
+    flex: 1,
+    alignItems: 'center' as const,
+  },
+  gradCountdownDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: Colors.cardBorder,
+  },
+  gradCountdownValue: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+  },
+  gradCountdownLabel: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 2,
+  },
+  gradProgressBar: {
+    height: 6,
+    backgroundColor: Colors.cardBorder,
+    borderRadius: 3,
+    overflow: 'hidden' as const,
+    marginBottom: 8,
+  },
+  gradProgressFill: {
+    height: '100%' as const,
+    backgroundColor: Colors.courseCompleted,
+    borderRadius: 3,
+  },
+  gradProgressText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center' as const,
   },
 });

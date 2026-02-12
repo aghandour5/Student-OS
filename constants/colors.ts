@@ -32,6 +32,19 @@ const Colors = {
   gpaAverage: '#F59E0B',
   gpaLow: '#EF4444',
 
+  categoryColors: {
+    'Foundation': '#8B5CF6',
+    'Mathematics': '#3B82F6',
+    'Science': '#EC4899',
+    'Computer Engineering': '#0EA5E9',
+    'Computer Science': '#14B8A6',
+    'Electrical Engineering': '#F97316',
+    'Engineering Core': '#10B981',
+    'General Education': '#6366F1',
+    'Elective': '#A855F7',
+    'Capstone': '#F59E0B',
+  } as Record<string, string>,
+
   white: '#FFFFFF',
   black: '#000000',
   transparent: 'transparent',
@@ -43,6 +56,21 @@ const Colors = {
     tabIconDefault: '#64748B',
     tabIconSelected: '#0EA5E9',
   },
+};
+
+export const LightColors = {
+  ...Colors,
+  background: '#F8FAFC',
+  backgroundSecondary: '#F1F5F9',
+  backgroundTertiary: '#E2E8F0',
+  card: '#FFFFFF',
+  cardElevated: '#F8FAFC',
+  cardBorder: '#E2E8F0',
+
+  text: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#94A3B8',
+  textInverse: '#F1F5F9',
 };
 
 export default Colors;
