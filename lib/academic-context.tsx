@@ -5,7 +5,7 @@ import {
   type CourseWithPrereqs, type SemesterPlan, type UserGrade, type UserProfile, type CourseNote,
   GRADE_POINTS
 } from '@shared/schema';
-import { offlineCourses } from './offline-data';
+import { offlineCourses, offlineOfferings, type OfflineOffering } from './offline-data';
 import { getApiUrl } from './query-client';
 
 const STORAGE_KEY = '@uniflow_user_profile';
@@ -26,6 +26,7 @@ type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'futu
 interface AcademicContextValue {
   profile: UserProfile;
   courses: CourseWithPrereqs[];
+  offerings: OfflineOffering[];
   isLoading: boolean;
   isOnline: boolean;
   getCourseStatus: (courseId: string) => CourseStatus;
@@ -43,6 +44,8 @@ interface AcademicContextValue {
   removeSemesterPlan: (planId: string) => void;
   addCourseToSemester: (planId: string, courseId: string) => void;
   removeCourseFromSemester: (planId: string, courseId: string) => void;
+  setSelectedOffering: (planId: string, courseId: string, offeringId: string) => void;
+  getOfferingsForCourse: (courseId: string, semester?: string) => OfflineOffering[];
   setCourseNote: (courseId: string, note: string) => void;
   getCourseNote: (courseId: string) => string;
   getPrerequisiteChain: (courseId: string) => CourseWithPrereqs[][];
@@ -79,8 +82,24 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Use server courses if available, otherwise fall back to offline data
+  // Fetch offerings from server
+  const { data: serverOfferings } = useQuery<OfflineOffering[]>({
+    queryKey: ['/api/offerings'],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      if (!baseUrl) throw new Error('Server not available');
+      const res = await fetch(`${baseUrl}/api/offerings`);
+      if (!res.ok) throw new Error('Failed to fetch offerings');
+      return res.json();
+    },
+    enabled: !!serverUrl,
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Use server data if available, otherwise fall back to offline data
   const courses = serverCourses ?? offlineCourses;
+  const offerings = serverOfferings ?? offlineOfferings;
   // Only show loading if we're actually trying to fetch from server
   const coursesLoading = serverUrl && serverLoading && !offlineCourses.length;
 
@@ -270,13 +289,33 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const removeCourseFromSemester = useCallback((planId: string, courseId: string) => {
     setProfile(prev => ({
       ...prev,
+      semesterPlans: prev.semesterPlans.map(plan => {
+        if (plan.id !== planId) return plan;
+        const newOfferings = { ...plan.selectedOfferings };
+        delete newOfferings[courseId];
+        return {
+          ...plan,
+          courseIds: plan.courseIds.filter(id => id !== courseId),
+          selectedOfferings: newOfferings,
+        };
+      }),
+    }));
+  }, []);
+
+  const setSelectedOffering = useCallback((planId: string, courseId: string, offeringId: string) => {
+    setProfile(prev => ({
+      ...prev,
       semesterPlans: prev.semesterPlans.map(plan =>
         plan.id === planId
-          ? { ...plan, courseIds: plan.courseIds.filter(id => id !== courseId) }
+          ? { ...plan, selectedOfferings: { ...plan.selectedOfferings, [courseId]: offeringId } }
           : plan
       ),
     }));
   }, []);
+
+  const getOfferingsForCourse = useCallback((courseId: string, semester?: string): OfflineOffering[] => {
+    return offerings.filter(o => o.courseId === courseId && (!semester || o.semester === semester));
+  }, [offerings]);
 
   const calculateGPA = useCallback((): number => {
     if (profile.grades.length === 0) return 0;
@@ -383,6 +422,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     profile,
     courses,
+    offerings,
     isLoading: coursesLoading || !loaded,
     isOnline,
     getCourseStatus,
@@ -400,6 +440,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     removeSemesterPlan,
     addCourseToSemester,
     removeCourseFromSemester,
+    setSelectedOffering,
+    getOfferingsForCourse,
     setCourseNote,
     getCourseNote,
     getPrerequisiteChain,
@@ -410,11 +452,12 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     inProgressCredits,
     resetProfile,
   }), [
-    profile, courses, coursesLoading, loaded, isOnline,
+    profile, courses, offerings, coursesLoading, loaded, isOnline,
     getCourseStatus, getPrerequisitesFor, getUnlockedBy, arePrereqsMet, getMissingPrereqs,
     toggleCourseCompleted, toggleCourseInProgress, toggleYearCompleted, isYearCompleted,
     setGrade, removeGrade,
     addSemesterPlan, removeSemesterPlan, addCourseToSemester, removeCourseFromSemester,
+    setSelectedOffering, getOfferingsForCourse,
     setCourseNote, getCourseNote, getPrerequisiteChain,
     calculateGPA, calculateSemesterGPA,
     totalCredits, completedCredits, inProgressCredits, resetProfile,

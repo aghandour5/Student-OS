@@ -14,14 +14,18 @@ import Colors from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useAcademic } from '@/lib/academic-context';
 import type { SemesterPlan, CourseWithPrereqs } from '@shared/schema';
+import type { OfflineOffering } from '@/lib/offline-data';
 import { BottomSheet } from '@/components/BottomSheet';
+
+const MAX_CREDITS = 18;
 
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const {
-    profile, courses, isLoading,
+    profile, courses, offerings, isLoading,
     addSemesterPlan, removeSemesterPlan,
     addCourseToSemester, removeCourseFromSemester,
+    setSelectedOffering, getOfferingsForCourse,
     getCourseStatus, arePrereqsMet, getMissingPrereqs,
   } = useAcademic();
   const { colors } = useTheme();
@@ -29,6 +33,7 @@ export default function PlannerScreen() {
   const [showNewSemester, setShowNewSemester] = useState(false);
   const [showAddCourse, setShowAddCourse] = useState<string | null>(null);
   const [expandedSemester, setExpandedSemester] = useState<string | null>(null);
+  const [showSelectSection, setShowSelectSection] = useState<{ planId: string; courseId: string } | null>(null);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
   const courseMap = useMemo(() => {
@@ -58,12 +63,29 @@ export default function PlannerScreen() {
     }, 0);
   };
 
+  const parseTime = (t: string): number => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + (m || 0);
+  };
+
+  const getDays = (dayOfWeek: string): string[] => {
+    const map: Record<string, string[]> = {
+      'MWF': ['M', 'W', 'F'], 'TTh': ['T', 'Th'], 'MW': ['M', 'W'],
+      'M': ['M'], 'T': ['T'], 'W': ['W'], 'Th': ['Th'], 'F': ['F'],
+    };
+    return map[dayOfWeek] || [dayOfWeek];
+  };
+
   const detectConflicts = (plan: SemesterPlan): string[] => {
     const warnings: string[] = [];
     const credits = getSemesterCredits(plan);
-    if (credits > 18) warnings.push(`Heavy load: ${credits} credits (max recommended: 18)`);
-    if (credits > 21) warnings.push(`Overload: ${credits} credits exceeds maximum`);
 
+    // Hard credit cap
+    if (credits > MAX_CREDITS) {
+      warnings.push(`⚠️ Exceeds limit: ${credits}/${MAX_CREDITS} credits`);
+    }
+
+    // Prerequisite checks
     for (const courseId of plan.courseIds) {
       if (!arePrereqsMet(courseId) && !profile.completedCourses.includes(courseId)) {
         const missing = getMissingPrereqs(courseId);
@@ -79,7 +101,65 @@ export default function PlannerScreen() {
         }
       }
     }
+
+    // Time conflict detection
+    if (plan.selectedOfferings) {
+      const selected = Object.entries(plan.selectedOfferings)
+        .map(([cid, oid]) => {
+          const off = offerings.find(o => o.id === oid);
+          return off ? { courseId: cid, offering: off } : null;
+        })
+        .filter(Boolean) as { courseId: string; offering: OfflineOffering }[];
+
+      for (let i = 0; i < selected.length; i++) {
+        for (let j = i + 1; j < selected.length; j++) {
+          const a = selected[i], b = selected[j];
+          const aDays = getDays(a.offering.dayOfWeek);
+          const bDays = getDays(b.offering.dayOfWeek);
+          const sharedDays = aDays.filter(d => bDays.includes(d));
+          if (sharedDays.length > 0) {
+            const aStart = parseTime(a.offering.startTime), aEnd = parseTime(a.offering.endTime);
+            const bStart = parseTime(b.offering.startTime), bEnd = parseTime(b.offering.endTime);
+            if (aStart < bEnd && bStart < aEnd) {
+              const cA = courseMap.get(a.courseId), cB = courseMap.get(b.courseId);
+              warnings.push(`🕐 ${cA?.code} & ${cB?.code}: Time conflict on ${sharedDays.join('/')} ${a.offering.startTime}-${a.offering.endTime}`);
+            }
+          }
+        }
+      }
+    }
+
     return warnings;
+  };
+
+  const getDifficulty = (plan: SemesterPlan): number => {
+    const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
+    if (coursesInPlan.length === 0) return 0;
+
+    // Base: average year level
+    const avgYear = coursesInPlan.reduce((sum, c) => sum + c.year, 0) / coursesInPlan.length;
+    let diff = avgYear;
+
+    // Math-heavy penalty
+    const mathCount = coursesInPlan.filter(c => c.category === 'Mathematics' || c.category === 'Foundation' && c.code.startsWith('MATH')).length;
+    if (mathCount >= 3) diff += 1.5;
+    else if (mathCount >= 2) diff += 0.5;
+
+    // STEM-heavy penalty
+    const stemCats = ['Electrical Engineering', 'Computer Engineering', 'Computer Science'];
+    const stemCount = coursesInPlan.filter(c => stemCats.includes(c.category)).length;
+    if (stemCount >= 4) diff += 1;
+
+    // Lab-heavy penalty
+    const labCount = coursesInPlan.filter(c => c.credits === 1).length;
+    if (labCount >= 3) diff += 0.5;
+
+    // Credit load factor 
+    const credits = getSemesterCredits(plan);
+    if (credits > MAX_CREDITS) diff += 1.5;
+    else if (credits >= 16) diff += 0.5;
+
+    return Math.min(5, Math.max(1, Math.round(diff)));
   };
 
   const handleCreateSemester = (season: 'Fall' | 'Spring' | 'Summer', year: number) => {
@@ -90,11 +170,16 @@ export default function PlannerScreen() {
       season,
       year,
       courseIds: [],
+      selectedOfferings: {},
     });
     setShowNewSemester(false);
     setExpandedSemester(id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
+
+  const closeSelectSection = useCallback(() => {
+    setShowSelectSection(null);
+  }, []);
 
   const closeNewSemester = useCallback(() => {
     setShowNewSemester(false);
@@ -261,7 +346,7 @@ export default function PlannerScreen() {
                   <View>
                     <Text style={[styles.semesterName, { color: colors.text }]}>{plan.name}</Text>
                     <Text style={[styles.semesterMeta, { color: colors.textSecondary }]}>
-                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > 21 ? Colors.danger : credits > 18 ? Colors.warning : colors.textSecondary, fontWeight: credits > 18 ? '700' : '400' }}>{credits} credits</Text>
+                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > MAX_CREDITS ? Colors.danger : credits > 15 ? Colors.warning : colors.textSecondary, fontWeight: credits > 15 ? '700' : '400' }}>{credits}/{MAX_CREDITS} credits</Text>
                     </Text>
                   </View>
                 </View>
@@ -282,15 +367,12 @@ export default function PlannerScreen() {
               {isExpanded && (
                 <View style={[styles.semesterBody, { borderTopColor: colors.cardBorder }]}>
                   {(() => {
-                    const creditColor = credits < 15 ? '#10B981' : credits <= 18 ? '#0EA5E9' : '#F59E0B';
-                    const creditLabel = credits < 15 ? 'Light load' : credits <= 18 ? 'Normal load' : 'Heavy load';
+                    const creditColor = credits < 15 ? '#10B981' : credits <= MAX_CREDITS ? '#0EA5E9' : '#EF4444';
+                    const creditLabel = credits < 15 ? 'Light load' : credits <= MAX_CREDITS ? 'Normal load' : 'Over limit!';
+
+                    const difficulty = getDifficulty(plan);
 
                     const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
-                    const avgYear = coursesInPlan.length > 0
-                      ? coursesInPlan.reduce((sum, c) => sum + c.year, 0) / coursesInPlan.length
-                      : 0;
-                    const difficulty = Math.min(5, Math.max(1, Math.round(avgYear)));
-
                     const coursesWithPrereqs = coursesInPlan.filter(c => c.prerequisites.length > 0);
                     const coursesWithMetPrereqs = coursesWithPrereqs.filter(c =>
                       arePrereqsMet(c.id) || profile.completedCourses.includes(c.id)
@@ -372,30 +454,61 @@ export default function PlannerScreen() {
                     const course = courseMap.get(courseId);
                     if (!course) return null;
                     const status = getCourseStatus(courseId);
+                    const selectedOfferingId = plan.selectedOfferings?.[courseId];
+                    const selectedOffering = selectedOfferingId ? offerings.find(o => o.id === selectedOfferingId) : null;
                     return (
                       <View key={courseId} style={[styles.plannedCourse, { borderBottomColor: colors.cardBorder + '50' }]}>
-                        <Pressable
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            router.push({ pathname: '/course/[id]', params: { id: courseId } });
-                          }}
-                          style={styles.plannedCourseInfo}
-                        >
-                          <View style={[styles.courseDot, {
-                            backgroundColor: status === 'completed' ? Colors.courseCompleted :
-                              status === 'in_progress' ? Colors.courseInProgress : Colors.primary
-                          }]} />
-                          <View style={styles.courseTextContainer}>
-                            <Text style={[styles.courseCode, { color: colors.textMuted }]}>{course.code}</Text>
-                            <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
-                          </View>
-                          <Text style={[styles.courseCredits, { color: colors.primary }]}>{course.credits}cr</Text>
-                        </Pressable>
+                        <View style={{ flex: 1 }}>
+                          <Pressable
+                            onPress={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              router.push({ pathname: '/course/[id]', params: { id: courseId } });
+                            }}
+                            style={styles.plannedCourseInfo}
+                          >
+                            <View style={[styles.courseDot, {
+                              backgroundColor: status === 'completed' ? Colors.courseCompleted :
+                                status === 'in_progress' ? Colors.courseInProgress : Colors.primary
+                            }]} />
+                            <View style={styles.courseTextContainer}>
+                              <Text style={[styles.courseCode, { color: colors.textMuted }]}>{course.code}</Text>
+                              <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
+                            </View>
+                            <Text style={[styles.courseCredits, { color: colors.primary }]}>{course.credits}cr</Text>
+                          </Pressable>
+                          {selectedOffering ? (
+                            <Pressable
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setShowSelectSection({ planId: plan.id, courseId });
+                              }}
+                              style={[styles.offeringInfo, { backgroundColor: colors.backgroundTertiary }]}
+                            >
+                              <Ionicons name="person-outline" size={11} color={colors.textMuted} />
+                              <Text style={[styles.offeringText, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {selectedOffering.instructor} · Sec {selectedOffering.section} · {selectedOffering.dayOfWeek} {selectedOffering.startTime}-{selectedOffering.endTime} · {selectedOffering.room}
+                              </Text>
+                              <Ionicons name="swap-horizontal" size={12} color={colors.textMuted} />
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setShowSelectSection({ planId: plan.id, courseId });
+                              }}
+                              style={[styles.offeringInfo, { backgroundColor: Colors.primary + '10', borderWidth: 1, borderColor: Colors.primary + '30', borderStyle: 'dashed' }]}
+                            >
+                              <Ionicons name="time-outline" size={11} color={Colors.primary} />
+                              <Text style={[styles.offeringText, { color: Colors.primary, fontWeight: '500' }]}>Select section</Text>
+                            </Pressable>
+                          )}
+                        </View>
                         <Pressable
                           onPress={() => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             removeCourseFromSemester(plan.id, courseId);
                           }}
+                          style={{ paddingLeft: 8, alignSelf: 'flex-start', paddingTop: 4 }}
                         >
                           <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                         </Pressable>
@@ -473,43 +586,145 @@ export default function PlannerScreen() {
         visible={!!showAddCourse}
         onClose={closeAddCourse}
         title="Add Course"
+        subtitle={(() => {
+          if (!showAddCourse) return undefined;
+          const plan = profile.semesterPlans.find(p => p.id === showAddCourse);
+          if (!plan) return undefined;
+          const used = getSemesterCredits(plan);
+          const remaining = MAX_CREDITS - used;
+          return remaining > 0 ? `${remaining} credits remaining` : 'Credit limit reached';
+        })()}
       >
-        {showAddCourse && (
-          <FlatList
-            data={getAvailableForSemester(profile.semesterPlans.find(p => p.id === showAddCourse)!)}
-            keyExtractor={item => item.id}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 40 }}
-            style={{ maxHeight: 500, flexShrink: 1 }}
-            renderItem={({ item }) => {
-              const met = arePrereqsMet(item.id) || profile.completedCourses.includes(item.id);
-              return (
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    addCourseToSemester(showAddCourse!, item.id);
-                    setShowAddCourse(null);
-                  }}
-                  style={[styles.addCourseItem, !met && styles.addCourseItemLocked]}
-                >
-                  <View style={styles.addCourseItemLeft}>
-                    <Text style={[styles.addCourseCode, { color: colors.textMuted }]}>{item.code}</Text>
-                    <Text style={[styles.addCourseTitle, { color: colors.text }]}>{item.title}</Text>
-                    {!met && (
-                      <View style={styles.lockedRow}>
-                        <Ionicons name="lock-closed" size={10} color={Colors.courseLocked} />
-                        <Text style={styles.lockedText}>Prerequisites not met</Text>
-                      </View>
-                    )}
+        {showAddCourse && (() => {
+          const currentPlan = profile.semesterPlans.find(p => p.id === showAddCourse);
+          const currentCredits = currentPlan ? getSemesterCredits(currentPlan) : 0;
+          const remainingCredits = MAX_CREDITS - currentCredits;
+          return (
+            <FlatList
+              data={getAvailableForSemester(currentPlan!)}
+              keyExtractor={item => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              style={{ maxHeight: 500, flexShrink: 1 }}
+              ListHeaderComponent={
+                remainingCredits <= 0 ? (
+                  <View style={[styles.creditCapBanner, { backgroundColor: Colors.danger + '15', borderColor: Colors.danger + '30' }]}>
+                    <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+                    <Text style={[styles.creditCapText, { color: Colors.danger }]}>Credit limit reached ({MAX_CREDITS}/{MAX_CREDITS})</Text>
                   </View>
-                  <Text style={[styles.addCourseCredits, { color: met ? colors.primary : colors.textMuted }]}>
-                    {item.credits}cr
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        )}
+                ) : null
+              }
+              renderItem={({ item }) => {
+                const met = arePrereqsMet(item.id) || profile.completedCourses.includes(item.id);
+                const wouldExceed = item.credits > remainingCredits;
+                const disabled = wouldExceed;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      if (disabled) {
+                        Alert.alert('Credit Limit', `Adding ${item.code} (${item.credits} cr) would exceed the ${MAX_CREDITS}-credit limit.`);
+                        return;
+                      }
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      addCourseToSemester(showAddCourse!, item.id);
+                      setShowAddCourse(null);
+                    }}
+                    style={[styles.addCourseItem, (!met || disabled) && styles.addCourseItemLocked]}
+                  >
+                    <View style={styles.addCourseItemLeft}>
+                      <Text style={[styles.addCourseCode, { color: colors.textMuted }]}>{item.code}</Text>
+                      <Text style={[styles.addCourseTitle, { color: disabled ? colors.textMuted : colors.text }]}>{item.title}</Text>
+                      {!met && (
+                        <View style={styles.lockedRow}>
+                          <Ionicons name="lock-closed" size={10} color={Colors.courseLocked} />
+                          <Text style={styles.lockedText}>Prerequisites not met</Text>
+                        </View>
+                      )}
+                      {wouldExceed && (
+                        <View style={styles.lockedRow}>
+                          <Ionicons name="alert-circle" size={10} color={Colors.danger} />
+                          <Text style={[styles.lockedText, { color: Colors.danger }]}>Exceeds credit limit</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.addCourseCredits, { color: disabled ? Colors.danger : met ? colors.primary : colors.textMuted }]}>
+                      {item.credits}cr
+                    </Text>
+                  </Pressable>
+                );
+              }}
+            />
+          );
+        })()}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={!!showSelectSection}
+        onClose={closeSelectSection}
+        title="Select Section"
+        subtitle={showSelectSection ? courseMap.get(showSelectSection.courseId)?.title : undefined}
+      >
+        {showSelectSection && (() => {
+          const plan = profile.semesterPlans.find(p => p.id === showSelectSection.planId);
+          const semesterSeason = plan?.season;
+          const availOfferings = getOfferingsForCourse(showSelectSection.courseId, semesterSeason);
+          const currentSelection = plan?.selectedOfferings?.[showSelectSection.courseId];
+          return (
+            <FlatList
+              data={availOfferings}
+              keyExtractor={item => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              style={{ maxHeight: 400, flexShrink: 1 }}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Ionicons name="calendar-outline" size={32} color={colors.textMuted} />
+                  <Text style={[styles.emptyTitle, { color: colors.text, fontSize: 15 }]}>No sections available</Text>
+                  <Text style={[styles.emptySubtitle, { color: colors.textMuted, fontSize: 12 }]}>This course has no offerings for {semesterSeason}</Text>
+                </View>
+              }
+              renderItem={({ item: off }) => {
+                const isSelected = currentSelection === off.id;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelectedOffering(showSelectSection.planId, showSelectSection.courseId, off.id);
+                      setShowSelectSection(null);
+                    }}
+                    style={[styles.sectionItem, isSelected && { backgroundColor: Colors.primary + '12', borderColor: Colors.primary + '40' }, { borderColor: colors.cardBorder }]}
+                  >
+                    <View style={styles.sectionLeft}>
+                      <View style={styles.sectionBadgeRow}>
+                        <View style={[styles.sectionBadge, { backgroundColor: Colors.primary + '20' }]}>
+                          <Text style={[styles.sectionBadgeText, { color: Colors.primary }]}>Sec {off.section}</Text>
+                        </View>
+                        {isSelected && (
+                          <View style={[styles.sectionBadge, { backgroundColor: '#10B98120' }]}>
+                            <Ionicons name="checkmark" size={12} color="#10B981" />
+                            <Text style={[styles.sectionBadgeText, { color: '#10B981' }]}>Selected</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.sectionDetailRow}>
+                        <Ionicons name="person-outline" size={13} color={colors.textSecondary} />
+                        <Text style={[styles.sectionDetailText, { color: colors.text }]}>{off.instructor}</Text>
+                      </View>
+                      <View style={styles.sectionDetailRow}>
+                        <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+                        <Text style={[styles.sectionDetailText, { color: colors.text }]}>{off.dayOfWeek} {off.startTime} – {off.endTime}</Text>
+                      </View>
+                      <View style={styles.sectionDetailRow}>
+                        <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+                        <Text style={[styles.sectionDetailText, { color: colors.text }]}>{off.room} · {off.campus}</Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          );
+        })()}
       </BottomSheet>
     </View>
   );
@@ -926,5 +1141,72 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     marginTop: 2,
+  },
+  offeringInfo: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    marginLeft: 20,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  offeringText: {
+    fontSize: 10,
+    fontFamily: 'Inter_400Regular',
+    flex: 1,
+  },
+  creditCapBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  creditCapText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  sectionItem: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  sectionLeft: {
+    flex: 1,
+    gap: 6,
+  },
+  sectionBadgeRow: {
+    flexDirection: 'row' as const,
+    gap: 6,
+    marginBottom: 4,
+  },
+  sectionBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sectionBadgeText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  sectionDetailRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  sectionDetailText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
   },
 });

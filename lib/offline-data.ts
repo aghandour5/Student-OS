@@ -67,3 +67,98 @@ export const offlineCourses: CourseWithPrereqs[] = [
     { id: 'CENG460', code: 'CENG460', title: 'Operating Systems', credits: 3, description: 'Process management, memory management, file systems, concurrency, scheduling, and distributed systems concepts.', category: 'Elective', year: 3, semester: 1, prerequisites: ['CENG380', 'CSCI300'], unlocks: [] },
     { id: 'CENG470', code: 'CENG470', title: 'Data Structures and Analysis of Algorithms', credits: 3, description: 'Advanced data structures including trees, graphs, hash tables, and algorithm analysis including sorting, searching, and complexity.', category: 'Elective', year: 3, semester: 1, prerequisites: ['CENG325', 'CSCI300'], unlocks: [] },
 ];
+
+export interface OfflineOffering {
+    id: string;
+    courseId: string;
+    section: string;
+    semester: string;
+    campus: string;
+    instructor: string;
+    dayOfWeek: string;
+    startTime: string;
+    endTime: string;
+    room: string;
+}
+
+export const offlineOfferings: OfflineOffering[] = [
+    // Foundation courses
+    { id: 'off-1', courseId: 'MATH160', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Ahmad Khalil', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'SCI 101' },
+    { id: 'off-2', courseId: 'MATH160', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Ahmad Khalil', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'SCI 101' },
+    { id: 'off-3', courseId: 'MATH161', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Layla Hassan', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'SCI 102' },
+    { id: 'off-4', courseId: 'MATH161', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Layla Hassan', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'SCI 102' },
+    { id: 'off-5', courseId: 'PHYS160', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Omar Farooq', dayOfWeek: 'TTh', startTime: '08:00', endTime: '09:30', room: 'SCI 201' },
+    { id: 'off-6', courseId: 'PHYS161', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Omar Farooq', dayOfWeek: 'TTh', startTime: '08:00', endTime: '09:30', room: 'SCI 201' },
+    { id: 'off-7', courseId: 'ENGL051', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Prof. Sarah Mitchell', dayOfWeek: 'MWF', startTime: '10:00', endTime: '11:00', room: 'HUM 110' },
+    { id: 'off-8', courseId: 'ENGL101', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Prof. James Roberts', dayOfWeek: 'TTh', startTime: '10:00', endTime: '11:30', room: 'HUM 112' },
+    { id: 'off-9', courseId: 'ENGL101', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Prof. James Roberts', dayOfWeek: 'TTh', startTime: '10:00', endTime: '11:30', room: 'HUM 112' },
+    { id: 'off-10', courseId: 'ENGL151', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Prof. Sarah Mitchell', dayOfWeek: 'MWF', startTime: '11:00', endTime: '12:00', room: 'HUM 110' },
+    { id: 'off-11', courseId: 'CHEM160', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Nadia El-Amin', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'SCI 301' },
+    { id: 'off-12', courseId: 'CHEM160', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Nadia El-Amin', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'SCI 301' },
+
+    // Year 1 Fall
+    { id: 'off-13', courseId: 'MATH225', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Youssef Mansour', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'ENG 201' },
+    { id: 'off-14', courseId: 'PHYS220', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Rania Abdelrahman', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'SCI 205' },
+    { id: 'off-15', courseId: 'CULT200', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Fatima Al-Zahrani', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'HUM 201' },
+    { id: 'off-16', courseId: 'CULT200', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Fatima Al-Zahrani', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'HUM 201' },
+    { id: 'off-17', courseId: 'MATH210', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Layla Hassan', dayOfWeek: 'MWF', startTime: '10:00', endTime: '11:00', room: 'ENG 202' },
+    { id: 'off-18', courseId: 'ENGG200', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Khalid Nasser', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'ENG 100' },
+    { id: 'off-19', courseId: 'ENGL201', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Prof. David Anderson', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'HUM 115' },
+
+    // Year 1 Spring
+    { id: 'off-20', courseId: 'EENG250', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Hassan Ibrahim', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'ENG 301' },
+    { id: 'off-21', courseId: 'CENG250', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Tariq Al-Rashid', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 305' },
+    { id: 'off-22', courseId: 'MATH270', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Youssef Mansour', dayOfWeek: 'MWF', startTime: '10:00', endTime: '11:00', room: 'ENG 201' },
+    { id: 'off-23', courseId: 'ENGL251', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Prof. David Anderson', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'HUM 115' },
+    { id: 'off-24', courseId: 'CSCI250L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Amira Saleh', dayOfWeek: 'W', startTime: '14:00', endTime: '16:00', room: 'LAB 101' },
+    { id: 'off-25', courseId: 'MATH220', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Layla Hassan', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'ENG 202' },
+    { id: 'off-26', courseId: 'CSCI250', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Amira Saleh', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'ENG 310' },
+
+    // Year 2 Fall
+    { id: 'off-27', courseId: 'CSCI300', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Amira Saleh', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'ENG 310' },
+    { id: 'off-28', courseId: 'EENG300', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Hassan Ibrahim', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 301' },
+    { id: 'off-29', courseId: 'ENGG300', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Mona Al-Qasim', dayOfWeek: 'MWF', startTime: '11:00', endTime: '12:00', room: 'ENG 100' },
+    { id: 'off-30', courseId: 'MATH310', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Youssef Mansour', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'ENG 201' },
+    { id: 'off-31', courseId: 'CENG335', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Tariq Al-Rashid', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'ENG 305' },
+    { id: 'off-32', courseId: 'CENG325', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'ENG 315' },
+    { id: 'off-33', courseId: 'EENG301L', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Hassan Ibrahim', dayOfWeek: 'Th', startTime: '15:30', endTime: '17:30', room: 'LAB 201' },
+
+    // Year 2 Spring
+    { id: 'off-34', courseId: 'ARAB200', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Samir Haddad', dayOfWeek: 'TTh', startTime: '08:00', endTime: '09:30', room: 'HUM 205' },
+    { id: 'off-35', courseId: 'EENG350L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Walid Khoury', dayOfWeek: 'W', startTime: '14:00', endTime: '16:00', room: 'LAB 202' },
+    { id: 'off-36', courseId: 'CENG352L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Tariq Al-Rashid', dayOfWeek: 'M', startTime: '14:00', endTime: '16:00', room: 'LAB 301' },
+    { id: 'off-37', courseId: 'CENG380', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'ENG 320' },
+    { id: 'off-38', courseId: 'EENG385', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Hassan Ibrahim', dayOfWeek: 'TTh', startTime: '10:00', endTime: '11:30', room: 'ENG 301' },
+    { id: 'off-39', courseId: 'CENG375', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'MWF', startTime: '11:00', endTime: '12:00', room: 'ENG 315' },
+    { id: 'off-40', courseId: 'EENG350', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Walid Khoury', dayOfWeek: 'TTh', startTime: '13:00', endTime: '14:30', room: 'ENG 302' },
+
+    // Year 3 Fall
+    { id: 'off-41', courseId: 'CENG430L', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'T', startTime: '14:00', endTime: '16:00', room: 'LAB 302' },
+    { id: 'off-42', courseId: 'EENG447', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Karim Azzam', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'ENG 401' },
+    { id: 'off-43', courseId: 'CENG435', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 315' },
+    { id: 'off-44', courseId: 'CENG415', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Hana Barakat', dayOfWeek: 'MWF', startTime: '10:00', endTime: '11:00', room: 'ENG 410' },
+    { id: 'off-45', courseId: 'CENG400L', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'Th', startTime: '14:00', endTime: '16:00', room: 'LAB 302' },
+    { id: 'off-46', courseId: 'CENG420', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Amira Saleh', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'ENG 310' },
+    { id: 'off-47', courseId: 'CENG400', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Tariq Al-Rashid', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'ENG 305' },
+    { id: 'off-48', courseId: 'CENG460', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'MWF', startTime: '14:00', endTime: '15:00', room: 'ENG 320' },
+    { id: 'off-49', courseId: 'CENG470', section: 'A', semester: 'Fall', campus: 'Main', instructor: 'Dr. Amira Saleh', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'ENG 310' },
+
+    // Year 3 Spring
+    { id: 'off-50', courseId: 'CENG450L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'M', startTime: '14:00', endTime: '16:00', room: 'LAB 302' },
+    { id: 'off-51', courseId: 'CENG455L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Hana Barakat', dayOfWeek: 'W', startTime: '14:00', endTime: '16:00', room: 'LAB 303' },
+    { id: 'off-52', courseId: 'CENG495', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Khalid Nasser', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 500' },
+    { id: 'off-53', courseId: 'EENG467L', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Karim Azzam', dayOfWeek: 'T', startTime: '14:00', endTime: '16:00', room: 'LAB 201' },
+    { id: 'off-54', courseId: 'ENGG450', section: 'A', semester: 'Spring', campus: 'Main', instructor: 'Dr. Mona Al-Qasim', dayOfWeek: 'MWF', startTime: '11:00', endTime: '12:00', room: 'ENG 100' },
+
+    // Section B offerings for popular courses
+    { id: 'off-55', courseId: 'MATH160', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Layla Hassan', dayOfWeek: 'TTh', startTime: '10:00', endTime: '11:30', room: 'SCI 105' },
+    { id: 'off-56', courseId: 'MATH161', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Ahmad Khalil', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'SCI 103' },
+    { id: 'off-57', courseId: 'MATH225', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Ahmad Khalil', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'ENG 203' },
+    { id: 'off-58', courseId: 'MATH210', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Youssef Mansour', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'ENG 204' },
+    { id: 'off-59', courseId: 'EENG250', section: 'B', semester: 'Spring', campus: 'Main', instructor: 'Dr. Walid Khoury', dayOfWeek: 'TTh', startTime: '13:00', endTime: '14:30', room: 'ENG 303' },
+    { id: 'off-60', courseId: 'CSCI250', section: 'B', semester: 'Spring', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'ENG 312' },
+    { id: 'off-61', courseId: 'CSCI300', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'TTh', startTime: '11:00', endTime: '12:30', room: 'ENG 312' },
+    { id: 'off-62', courseId: 'CENG380', section: 'B', semester: 'Spring', campus: 'Main', instructor: 'Dr. Tariq Al-Rashid', dayOfWeek: 'TTh', startTime: '14:00', endTime: '15:30', room: 'ENG 322' },
+    { id: 'off-63', courseId: 'CENG415', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Bilal Mahmoud', dayOfWeek: 'TTh', startTime: '13:00', endTime: '14:30', room: 'ENG 412' },
+    { id: 'off-64', courseId: 'CENG420', section: 'B', semester: 'Fall', campus: 'Main', instructor: 'Dr. Zainab Othman', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'ENG 315' },
+];

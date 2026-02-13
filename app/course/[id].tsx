@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, TextInput
+  View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, TextInput,
+  KeyboardAvoidingView, Keyboard
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -59,8 +60,45 @@ export default function CourseDetailScreen() {
   const courseId = id!;
   const chain = getPrerequisiteChain(courseId);
   const [noteText, setNoteText] = useState('');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
   const note = getCourseNote(courseId);
-  useEffect(() => { setNoteText(note); }, [note]);
+  const noteRef = useRef(noteText);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setNoteText(note); noteRef.current = note; }, [note]);
+
+  // Debounced auto-save: saves 500ms after user stops typing
+  const handleNoteChange = useCallback((text: string) => {
+    setNoteText(text);
+    noteRef.current = text;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      setCourseNote(courseId, text);
+    }, 500);
+  }, [courseId, setCourseNote]);
+
+  // Flush any pending save on unmount (navigating away)
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      // Save whatever is in the ref right now
+      setCourseNote(courseId, noteRef.current);
+    };
+  }, [courseId, setCourseNote]);
+
+  // Track keyboard state
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardOpen(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardOpen(false)
+    );
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   const { cleanDescription, corequisites } = useMemo(() => {
     if (!course) return { cleanDescription: '', corequisites: [] };
@@ -116,299 +154,314 @@ export default function CourseDetailScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingBottom: 40 }]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}
       >
-        <LinearGradient
-          colors={[config.bgColor, colors.background]}
-          style={styles.heroGradient}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={[styles.content, { paddingBottom: keyboardOpen ? 100 : 40 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
         >
-          <View style={[styles.statusChip, { backgroundColor: config.color + '20' }]}>
-            <Ionicons name={config.icon as any} size={14} color={config.color} />
-            <Text style={[styles.statusLabel, { color: config.color }]}>{config.label}</Text>
+          <LinearGradient
+            colors={[config.bgColor, colors.background]}
+            style={styles.heroGradient}
+          >
+            <View style={[styles.statusChip, { backgroundColor: config.color + '20' }]}>
+              <Ionicons name={config.icon as any} size={14} color={config.color} />
+              <Text style={[styles.statusLabel, { color: config.color }]}>{config.label}</Text>
+            </View>
+
+            <Text style={[styles.courseTitle, { color: colors.text }]}>{course.title}</Text>
+            <Text style={[styles.courseCode, { color: colors.textSecondary }]}>{course.code}</Text>
+
+            <View style={styles.metaRow}>
+              <View style={styles.metaItem}>
+                <MaterialCommunityIcons name="school" size={16} color={colors.textSecondary} />
+                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.credits} Credits</Text>
+                <TermInfo term="Credits" size={14} />
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="folder-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.category}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.metaText, { color: colors.textSecondary }]}>Year {course.year}, Sem {course.semester}</Text>
+              </View>
+            </View>
+
+            {grade && (
+              <View style={styles.gradeDisplay}>
+                <Text style={styles.gradeDisplayLabel}>Your Grade</Text>
+                <Text style={styles.gradeDisplayValue}>{grade.grade}</Text>
+              </View>
+            )}
+          </LinearGradient>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{cleanDescription}</Text>
           </View>
 
-          <Text style={[styles.courseTitle, { color: colors.text }]}>{course.title}</Text>
-          <Text style={[styles.courseCode, { color: colors.textSecondary }]}>{course.code}</Text>
-
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <MaterialCommunityIcons name="school" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.credits} Credits</Text>
-              <TermInfo term="Credits" size={14} />
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="folder-outline" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{course.category}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>Year {course.year}, Sem {course.semester}</Text>
-            </View>
+          <View style={styles.actionRow}>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                toggleCourseInProgress(course.id);
+              }}
+              style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '20', borderColor: Colors.courseInProgress }
+              ]}
+            >
+              <Ionicons
+                name="time"
+                size={18}
+                color={status === 'in_progress' ? Colors.courseInProgress : colors.textSecondary}
+              />
+              <Text style={[styles.actionBtnText, { color: colors.textSecondary },
+              status === 'in_progress' && { color: Colors.courseInProgress }
+              ]}>In Progress</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                toggleCourseCompleted(course.id);
+              }}
+              style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              status === 'completed' && { backgroundColor: Colors.courseCompleted + '20', borderColor: Colors.courseCompleted }
+              ]}
+            >
+              <Ionicons
+                name="checkmark-circle"
+                size={18}
+                color={status === 'completed' ? Colors.courseCompleted : colors.textSecondary}
+              />
+              <Text style={[styles.actionBtnText, { color: colors.textSecondary },
+              status === 'completed' && { color: Colors.courseCompleted }
+              ]}>Completed</Text>
+            </Pressable>
           </View>
 
-          {grade && (
-            <View style={styles.gradeDisplay}>
-              <Text style={styles.gradeDisplayLabel}>Your Grade</Text>
-              <Text style={styles.gradeDisplayValue}>{grade.grade}</Text>
+          {prereqs.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Prerequisites</Text>
+                <TermInfo term="Prerequisites" />
+              </View>
+              {prereqs.map((prereq: any) => {
+                const pStatus = getCourseStatus(prereq.id);
+                const isMissing = missingPrereqs.some(m => m.id === prereq.id);
+                return (
+                  <Pressable
+                    key={prereq.id}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push({ pathname: '/course/[id]', params: { id: prereq.id } });
+                    }}
+                    style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                  >
+                    <View style={[styles.prereqDot, {
+                      backgroundColor: pStatus === 'completed' ? Colors.courseCompleted : Colors.courseLocked
+                    }]} />
+                    <View style={styles.prereqInfo}>
+                      <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{prereq.code}</Text>
+                      <Text style={[styles.prereqTitle, { color: colors.text }]}>{prereq.title}</Text>
+                    </View>
+                    {isMissing && (
+                      <View style={styles.missingBadge}>
+                        <Ionicons name="alert-circle" size={12} color={Colors.danger} />
+                        <Text style={styles.missingText}>Needed</Text>
+                      </View>
+                    )}
+                    {!isMissing && (
+                      <Ionicons name="checkmark" size={16} color={Colors.courseCompleted} />
+                    )}
+                  </Pressable>
+                );
+              })}
             </View>
           )}
-        </LinearGradient>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
-          <Text style={[styles.description, { color: colors.textSecondary }]}>{cleanDescription}</Text>
-        </View>
-
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              toggleCourseInProgress(course.id);
-            }}
-            style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
-            status === 'in_progress' && { backgroundColor: Colors.courseInProgress + '20', borderColor: Colors.courseInProgress }
-            ]}
-          >
-            <Ionicons
-              name="time"
-              size={18}
-              color={status === 'in_progress' ? Colors.courseInProgress : colors.textSecondary}
-            />
-            <Text style={[styles.actionBtnText, { color: colors.textSecondary },
-            status === 'in_progress' && { color: Colors.courseInProgress }
-            ]}>In Progress</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              toggleCourseCompleted(course.id);
-            }}
-            style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder },
-            status === 'completed' && { backgroundColor: Colors.courseCompleted + '20', borderColor: Colors.courseCompleted }
-            ]}
-          >
-            <Ionicons
-              name="checkmark-circle"
-              size={18}
-              color={status === 'completed' ? Colors.courseCompleted : colors.textSecondary}
-            />
-            <Text style={[styles.actionBtnText, { color: colors.textSecondary },
-            status === 'completed' && { color: Colors.courseCompleted }
-            ]}>Completed</Text>
-          </Pressable>
-        </View>
-
-        {prereqs.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Prerequisites</Text>
-              <TermInfo term="Prerequisites" />
-            </View>
-            {prereqs.map((prereq: any) => {
-              const pStatus = getCourseStatus(prereq.id);
-              const isMissing = missingPrereqs.some(m => m.id === prereq.id);
-              return (
-                <Pressable
-                  key={prereq.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push({ pathname: '/course/[id]', params: { id: prereq.id } });
-                  }}
-                  style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-                >
-                  <View style={[styles.prereqDot, {
-                    backgroundColor: pStatus === 'completed' ? Colors.courseCompleted : Colors.courseLocked
-                  }]} />
-                  <View style={styles.prereqInfo}>
-                    <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{prereq.code}</Text>
-                    <Text style={[styles.prereqTitle, { color: colors.text }]}>{prereq.title}</Text>
-                  </View>
-                  {isMissing && (
-                    <View style={styles.missingBadge}>
-                      <Ionicons name="alert-circle" size={12} color={Colors.danger} />
-                      <Text style={styles.missingText}>Needed</Text>
+          {corequisites.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Corequisites</Text>
+                <TermInfo term="Corequisites" />
+              </View>
+              {corequisites.map(coreq => {
+                const cStatus = getCourseStatus(coreq.id);
+                return (
+                  <Pressable
+                    key={coreq.id}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push({ pathname: '/course/[id]', params: { id: coreq.id } });
+                    }}
+                    style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                  >
+                    <View style={[styles.prereqDot, {
+                      backgroundColor: cStatus === 'completed' ? Colors.courseCompleted :
+                        cStatus === 'in_progress' ? Colors.courseInProgress : Colors.courseLocked
+                    }]} />
+                    <View style={styles.prereqInfo}>
+                      <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{coreq.code}</Text>
+                      <Text style={[styles.prereqTitle, { color: colors.text }]}>{coreq.title}</Text>
                     </View>
-                  )}
-                  {!isMissing && (
-                    <Ionicons name="checkmark" size={16} color={Colors.courseCompleted} />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {corequisites.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Corequisites</Text>
-              <TermInfo term="Corequisites" />
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
+                );
+              })}
             </View>
-            {corequisites.map(coreq => {
-              const cStatus = getCourseStatus(coreq.id);
-              return (
+          )}
+
+          {unlocks.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Unlocks</Text>
+                <TermInfo term="Unlocks" />
+              </View>
+              <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+                Completing this course enables {unlocks.length} more course{unlocks.length > 1 ? 's' : ''}
+              </Text>
+              {unlocks.map(unlock => (
                 <Pressable
-                  key={coreq.id}
+                  key={unlock.id}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push({ pathname: '/course/[id]', params: { id: coreq.id } });
+                    router.push({ pathname: '/course/[id]', params: { id: unlock.id } });
                   }}
                   style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
                 >
-                  <View style={[styles.prereqDot, {
-                    backgroundColor: cStatus === 'completed' ? Colors.courseCompleted :
-                      cStatus === 'in_progress' ? Colors.courseInProgress : Colors.courseLocked
-                  }]} />
+                  <View style={[styles.prereqDot, { backgroundColor: Colors.primary }]} />
                   <View style={styles.prereqInfo}>
-                    <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{coreq.code}</Text>
-                    <Text style={[styles.prereqTitle, { color: colors.text }]}>{coreq.title}</Text>
+                    <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{unlock.code}</Text>
+                    <Text style={[styles.prereqTitle, { color: colors.text }]}>{unlock.title}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {unlocks.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Unlocks</Text>
-              <TermInfo term="Unlocks" />
+              ))}
             </View>
-            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-              Completing this course enables {unlocks.length} more course{unlocks.length > 1 ? 's' : ''}
-            </Text>
-            {unlocks.map(unlock => (
-              <Pressable
-                key={unlock.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: '/course/[id]', params: { id: unlock.id } });
-                }}
-                style={[styles.prereqCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-              >
-                <View style={[styles.prereqDot, { backgroundColor: Colors.primary }]} />
-                <View style={styles.prereqInfo}>
-                  <Text style={[styles.prereqCode, { color: colors.textMuted }]}>{unlock.code}</Text>
-                  <Text style={[styles.prereqTitle, { color: colors.text }]}>{unlock.title}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-              </Pressable>
-            ))}
-          </View>
-        )}
+          )}
 
-        {offerings.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Offerings</Text>
-            {offerings.map((offering: Offering, idx: number) => (
-              <View key={idx} style={[styles.offeringCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <View style={styles.offeringHeader}>
-                  <View style={styles.offeringBadge}>
-                    <Ionicons
-                      name={offering.semester === 'Fall' ? 'leaf' : offering.semester === 'Spring' ? 'flower' : 'sunny'}
-                      size={12}
-                      color={offering.semester === 'Fall' ? '#F59E0B' :
-                        offering.semester === 'Spring' ? '#10B981' : '#EF4444'}
-                    />
-                    <Text style={[styles.offeringSemester, { color: colors.text }]}>{offering.semester}</Text>
-                  </View>
-                  <Text style={[styles.offeringCampus, { color: colors.textSecondary }]}>{offering.campus} Campus</Text>
-                </View>
-                <View style={styles.offeringDetails}>
-                  <View style={styles.offeringDetail}>
-                    <Ionicons name="person-outline" size={12} color={colors.textMuted} />
-                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.instructor}</Text>
-                  </View>
-                  <View style={styles.offeringDetail}>
-                    <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.dayOfWeek} {offering.startTime}-{offering.endTime}</Text>
-                  </View>
-                  <View style={styles.offeringDetail}>
-                    <Ionicons name="location-outline" size={12} color={colors.textMuted} />
-                    <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.room}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {status === 'locked' && chain.length > 0 && (
-          <View style={[styles.chainSection, { backgroundColor: colors.card, borderColor: Colors.warning + '30' }]}>
-            <Text style={styles.chainTitle}>
-              <Ionicons name="git-branch-outline" size={16} color={Colors.warning} /> Path to Unlock
-            </Text>
-            <Text style={[styles.chainSubtitle, { color: colors.textMuted }]}>Complete these courses in order:</Text>
-            {chain.map((level, levelIndex) => (
-              <View key={levelIndex} style={styles.chainLevel}>
-                <View style={styles.chainLevelHeader}>
-                  <View style={styles.chainStepBadge}>
-                    <Text style={styles.chainStepText}>Step {levelIndex + 1}</Text>
-                  </View>
-                  {levelIndex < chain.length - 1 && (
-                    <View style={styles.chainConnector}>
-                      <Ionicons name="arrow-down" size={14} color={colors.textMuted} />
-                    </View>
-                  )}
-                </View>
-                {level.map(course => {
-                  const courseStatus = getCourseStatus(course.id);
-                  return (
-                    <Pressable
-                      key={course.id}
-                      style={styles.chainCourse}
-                      onPress={() => router.push(`/course/${course.id}`)}
-                    >
+          {offerings.length > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Offerings</Text>
+              {offerings.map((offering: Offering, idx: number) => (
+                <View key={idx} style={[styles.offeringCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                  <View style={styles.offeringHeader}>
+                    <View style={styles.offeringBadge}>
                       <Ionicons
-                        name={courseStatus === 'completed' ? 'checkmark-circle' : courseStatus === 'available' ? 'arrow-forward-circle' : 'lock-closed'}
-                        size={16}
-                        color={courseStatus === 'completed' ? Colors.courseCompleted : courseStatus === 'available' ? Colors.primary : Colors.courseLocked}
+                        name={offering.semester === 'Fall' ? 'leaf' : offering.semester === 'Spring' ? 'flower' : 'sunny'}
+                        size={12}
+                        color={offering.semester === 'Fall' ? '#F59E0B' :
+                          offering.semester === 'Spring' ? '#10B981' : '#EF4444'}
                       />
-                      <Text style={[styles.chainCourseCode, { color: colors.text }]}>{course.code}</Text>
-                      <Text style={[styles.chainCourseTitle, { color: colors.textSecondary }]} numberOfLines={1}>{course.title}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {missingPrereqs.length > 0 && (
-          <View style={styles.autoSuggest}>
-            <Ionicons name="bulb-outline" size={18} color={Colors.warning} />
-            <View style={styles.autoSuggestContent}>
-              <Text style={styles.autoSuggestTitle}>Prerequisite Path</Text>
-              <Text style={[styles.autoSuggestText, { color: colors.textSecondary }]}>
-                To unlock this course, you need to complete:{'\n'}
-                {missingPrereqs.map(m => m.code).join(' → ')} → {course.code}
-              </Text>
+                      <Text style={[styles.offeringSemester, { color: colors.text }]}>{offering.semester}</Text>
+                    </View>
+                    <Text style={[styles.offeringCampus, { color: colors.textSecondary }]}>{offering.campus} Campus</Text>
+                  </View>
+                  <View style={styles.offeringDetails}>
+                    <View style={styles.offeringDetail}>
+                      <Ionicons name="person-outline" size={12} color={colors.textMuted} />
+                      <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.instructor}</Text>
+                    </View>
+                    <View style={styles.offeringDetail}>
+                      <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                      <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.dayOfWeek} {offering.startTime}-{offering.endTime}</Text>
+                    </View>
+                    <View style={styles.offeringDetail}>
+                      <Ionicons name="location-outline" size={12} color={colors.textMuted} />
+                      <Text style={[styles.offeringText, { color: colors.textSecondary }]}>{offering.room}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
             </View>
-          </View>
-        )}
+          )}
 
-        <View style={[styles.notesSection, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <Text style={[styles.notesSectionTitle, { color: colors.textSecondary }]}>
-            <Ionicons name="create-outline" size={16} color={colors.textSecondary} /> Personal Notes
-          </Text>
-          <TextInput
-            style={[styles.notesInput, { color: colors.text, backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder }]}
-            placeholder="Add your notes about this course..."
-            placeholderTextColor={colors.textMuted}
-            value={noteText}
-            onChangeText={setNoteText}
-            onBlur={() => setCourseNote(courseId, noteText)}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-        </View>
-      </ScrollView>
+          {status === 'locked' && chain.length > 0 && (
+            <View style={[styles.chainSection, { backgroundColor: colors.card, borderColor: Colors.warning + '30' }]}>
+              <Text style={styles.chainTitle}>
+                <Ionicons name="git-branch-outline" size={16} color={Colors.warning} /> Path to Unlock
+              </Text>
+              <Text style={[styles.chainSubtitle, { color: colors.textMuted }]}>Complete these courses in order:</Text>
+              {chain.map((level, levelIndex) => (
+                <View key={levelIndex} style={styles.chainLevel}>
+                  <View style={styles.chainLevelHeader}>
+                    <View style={styles.chainStepBadge}>
+                      <Text style={styles.chainStepText}>Step {levelIndex + 1}</Text>
+                    </View>
+                    {levelIndex < chain.length - 1 && (
+                      <View style={styles.chainConnector}>
+                        <Ionicons name="arrow-down" size={14} color={colors.textMuted} />
+                      </View>
+                    )}
+                  </View>
+                  {level.map(course => {
+                    const courseStatus = getCourseStatus(course.id);
+                    return (
+                      <Pressable
+                        key={course.id}
+                        style={styles.chainCourse}
+                        onPress={() => router.push(`/course/${course.id}`)}
+                      >
+                        <Ionicons
+                          name={courseStatus === 'completed' ? 'checkmark-circle' : courseStatus === 'available' ? 'arrow-forward-circle' : 'lock-closed'}
+                          size={16}
+                          color={courseStatus === 'completed' ? Colors.courseCompleted : courseStatus === 'available' ? Colors.primary : Colors.courseLocked}
+                        />
+                        <Text style={[styles.chainCourseCode, { color: colors.text }]}>{course.code}</Text>
+                        <Text style={[styles.chainCourseTitle, { color: colors.textSecondary }]} numberOfLines={1}>{course.title}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          )}
+
+          {missingPrereqs.length > 0 && (
+            <View style={styles.autoSuggest}>
+              <Ionicons name="bulb-outline" size={18} color={Colors.warning} />
+              <View style={styles.autoSuggestContent}>
+                <Text style={styles.autoSuggestTitle}>Prerequisite Path</Text>
+                <Text style={[styles.autoSuggestText, { color: colors.textSecondary }]}>
+                  To unlock this course, you need to complete:{'\n'}
+                  {missingPrereqs.map(m => m.code).join(' → ')} → {course.code}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View style={[styles.notesSection, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.notesSectionTitle, { color: colors.textSecondary }]}>
+              <Ionicons name="create-outline" size={16} color={colors.textSecondary} /> Personal Notes
+            </Text>
+            <TextInput
+              style={[styles.notesInput, { color: colors.text, backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder }]}
+              placeholder="Add your notes about this course..."
+              placeholderTextColor={colors.textMuted}
+              value={noteText}
+              onChangeText={handleNoteChange}
+              onBlur={() => setCourseNote(courseId, noteText)}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: true });
+                }, 300);
+              }}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              scrollEnabled={false}
+            />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

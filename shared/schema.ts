@@ -35,6 +35,7 @@ export const offerings = pgTable("offerings", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   courseId: varchar("course_id").notNull().references(() => courses.id),
+  section: text("section").notNull(),
   semester: text("semester").notNull(),
   campus: text("campus").notNull(),
   instructor: text("instructor").notNull(),
@@ -66,6 +67,7 @@ export interface SemesterPlan {
   season: 'Fall' | 'Spring' | 'Summer';
   year: number;
   courseIds: string[];
+  selectedOfferings?: Record<string, string>;
 }
 
 export interface UserGrade {

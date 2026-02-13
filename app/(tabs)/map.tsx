@@ -43,8 +43,8 @@ interface NodePosition {
 interface TooltipData {
   course: CourseWithPrereqs;
   status: CourseStatus;
-  x: number;
-  y: number;
+  screenX: number;
+  screenY: number;
 }
 
 const statusLabels: Record<string, string> = {
@@ -96,6 +96,8 @@ export default function MapScreen() {
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapContainerRef = useRef<View>(null);
+  const mapContainerTopRef = useRef(0);
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -194,11 +196,11 @@ export default function MapScreen() {
     }
   }, []);
 
-  const showTooltip = useCallback((course: CourseWithPrereqs, status: CourseStatus, nodeX: number, nodeY: number) => {
+  const showTooltip = useCallback((course: CourseWithPrereqs, status: CourseStatus, screenX: number, screenY: number) => {
     if (tooltipTimerRef.current) {
       clearTimeout(tooltipTimerRef.current);
     }
-    setTooltipData({ course, status, x: nodeX, y: nodeY });
+    setTooltipData({ course, status, screenX, screenY });
     setTooltipVisible(true);
     tooltipTimerRef.current = setTimeout(() => {
       setTooltipVisible(false);
@@ -607,7 +609,15 @@ export default function MapScreen() {
         </View>
       )}
 
-      <View style={[styles.mapContainer, { backgroundColor: colors.background }]}>
+      <View
+        ref={mapContainerRef}
+        onLayout={() => {
+          mapContainerRef.current?.measureInWindow((_x, y) => {
+            mapContainerTopRef.current = y || 0;
+          });
+        }}
+        style={[styles.mapContainer, { backgroundColor: colors.background }]}
+      >
         {filteredCourses.length === 0 && selectedFilter !== 'all' ? (
           <View style={styles.emptyState}>
             <Ionicons name="search-outline" size={48} color={colors.textMuted} />
@@ -822,10 +832,11 @@ export default function MapScreen() {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             handleHighlight(highlightedId === courseId ? null : courseId);
                           }}
-                          onLongPress={() => {
+                          onLongPress={(e) => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             const status = getCourseStatus(courseId);
-                            showTooltip(pos.course, status, pos.x, pos.y);
+                            const { pageX, pageY } = e.nativeEvent;
+                            showTooltip(pos.course, status, pageX, pageY);
                           }}
                           delayLongPress={500}
                           style={{
@@ -954,10 +965,11 @@ export default function MapScreen() {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             handleHighlight(highlightedId === courseId ? null : courseId);
                           }}
-                          onLongPress={() => {
+                          onLongPress={(e) => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             const status = getCourseStatus(courseId);
-                            showTooltip(pos.course, status, pos.x, pos.y);
+                            const { pageX, pageY } = e.nativeEvent;
+                            showTooltip(pos.course, status, pageX, pageY);
                           }}
                           delayLongPress={500}
                           style={{ position: 'absolute', left: pos.x, top: pos.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
@@ -985,21 +997,30 @@ export default function MapScreen() {
 
         {tooltipVisible && tooltipData && (() => {
           const vpWidth = Dimensions.get('window').width;
-          const vpHeight = Dimensions.get('window').height * 0.6;
-          let tooltipX = tooltipData.x + NODE_WIDTH / 2 - TOOLTIP_WIDTH / 2;
-          let tooltipY = tooltipData.y - 10;
-          let showAbove = true;
+          const vpHeight = Dimensions.get('window').height;
+          const TOOLTIP_HEIGHT = 180;
 
-          if (tooltipY < 10) {
-            tooltipY = tooltipData.y + NODE_HEIGHT + 10;
-            showAbove = false;
-          }
-          if (tooltipY > vpHeight - 160) {
-            tooltipY = tooltipData.y - 10;
-            showAbove = true;
-          }
+          // Offset by map container top to convert screen coords to container-relative
+          const containerTop = mapContainerTopRef.current;
 
+          // Position horizontally centered on tap point, clamped to screen
+          let tooltipX = tooltipData.screenX - TOOLTIP_WIDTH / 2;
           tooltipX = Math.max(8, Math.min(tooltipX, vpWidth - TOOLTIP_WIDTH - 8));
+
+          // Convert screen Y to container-relative Y
+          const relativeY = tooltipData.screenY - containerTop;
+
+          // Position above tap point by default; if not enough room, show below
+          let tooltipY: number;
+          if (relativeY - TOOLTIP_HEIGHT - 20 > 10) {
+            // Enough room above
+            tooltipY = relativeY - TOOLTIP_HEIGHT - 20;
+          } else {
+            // Show below the tap point
+            tooltipY = relativeY + 20;
+          }
+          // Clamp to container bounds
+          tooltipY = Math.max(10, Math.min(tooltipY, vpHeight - containerTop - TOOLTIP_HEIGHT - 40));
 
           const prereqCount = tooltipData.course.prerequisites.length;
           const unlocksCount = tooltipData.course.unlocks.length;
@@ -1014,9 +1035,9 @@ export default function MapScreen() {
                 style={[
                   styles.tooltipCard,
                   {
+                    position: 'absolute',
                     left: tooltipX,
-                    top: showAbove ? undefined : tooltipY,
-                    bottom: showAbove ? vpHeight - tooltipData.y + 10 : undefined,
+                    top: tooltipY,
                     backgroundColor: colors.cardElevated,
                     borderColor: colors.cardBorder,
                   },
