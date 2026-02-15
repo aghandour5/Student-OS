@@ -47,6 +47,7 @@ const Colors = {
     'Computer Engineering': '#0EA5E9',
     'Computer Science': '#14B8A6',
     'Electrical Engineering': '#F97316',
+    'Mechanical Engineering': '#F43F5E',
     'Engineering Core': '#10B981',
     'General Education': '#6366F1',
     'Elective': '#A855F7',

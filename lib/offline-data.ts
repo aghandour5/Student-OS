@@ -38,6 +38,9 @@ export const offlineCourses: CourseWithPrereqs[] = [
     // CENG Year 1 Spring specific
     { id: 'CENG250', code: 'CENG250', title: 'Digital Logic I', credits: 3, description: 'Boolean algebra, combinational logic design.', category: 'Computer Engineering', year: 1, semester: 2, major: 'shared', prerequisites: [], unlocks: ['CENG335', 'CENG352L', 'CENG380', 'EENG350', 'CENG415', 'CENG400'], corequisites: ['EENG250'] },
 
+    // MENG Year 1 Spring specific
+    { id: 'MENG250', code: 'MENG250', title: 'Statics', credits: 3, description: 'Force systems, equilibrium, structures.', category: 'Mechanical Engineering', year: 1, semester: 2, major: 'MENG', prerequisites: ['MATH161', 'MATH160', 'PHYS161', 'PHYS160', 'ENGL051'], unlocks: ['MENG300', 'MENG310', 'MENG320', 'EENG435'], corequisites: ['MATH210'] },
+
     // Year 2 - Fall Semester
     { id: 'CSCI300', code: 'CSCI300', title: 'Intermediate Programming with Objects', credits: 3, description: 'OOP concepts.', category: 'Computer Science', year: 2, semester: 1, major: 'CENG', prerequisites: ['CSCI250L', 'CSCI250'], unlocks: ['CENG325', 'CENG375', 'CENG435', 'CENG415', 'CENG420', 'CENG460', 'CENG470'], corequisites: [] },
     { id: 'EENG300', code: 'EENG300', title: 'Electric Circuits II', credits: 3, description: 'AC circuit analysis.', category: 'Electrical Engineering', year: 2, semester: 1, major: 'shared', prerequisites: ['EENG250'], unlocks: ['EENG350L', 'EENG385', 'EENG350', 'EENG365', 'EENG388', 'EENG440', 'EENG435', 'EENG410', 'EENG460'], corequisites: ['EENG301L'] },
@@ -50,7 +53,7 @@ export const offlineCourses: CourseWithPrereqs[] = [
     { id: 'CENG325', code: 'CENG325', title: 'Software Applications and Design', credits: 3, description: 'Software design principles.', category: 'Computer Engineering', year: 2, semester: 1, major: 'CENG', prerequisites: ['CSCI300'], unlocks: ['CENG375', 'CENG430L', 'CENG435', 'CENG415', 'CENG420', 'CENG470'], corequisites: ['CSCI300'] },
 
     // EENG Year 1 Fall specific (MENG225 is Year 1 Fall in plan)
-    { id: 'MENG225', code: 'MENG225', title: 'Engineering Drawing & CAD', credits: 3, description: 'Fundamentals of engineering graphics.', category: 'Engineering Core', year: 1, semester: 1, major: 'EENG', prerequisites: [], unlocks: [], corequisites: [] },
+    { id: 'MENG225', code: 'MENG225', title: 'Engineering Drawing & CAD', credits: 3, description: 'Fundamentals of engineering graphics.', category: 'Engineering Core', year: 1, semester: 1, major: 'shared', prerequisites: [], unlocks: ['MENG310'], corequisites: [] },
 
     // Year 2 - Spring Semester
     { id: 'ARAB200', code: 'ARAB200', title: 'Arabic Language and Literature', credits: 3, description: 'Study of Arabic language.', category: 'General Education', year: 2, semester: 2, major: 'shared', prerequisites: [], unlocks: [], corequisites: [] },
@@ -66,6 +69,21 @@ export const offlineCourses: CourseWithPrereqs[] = [
     // EENG Year 2 Spring specific
     { id: 'EENG365', code: 'EENG365', title: 'Electrical Wiring and Installation', credits: 3, description: 'Residential and industrial wiring.', category: 'Electrical Engineering', year: 2, semester: 2, major: 'EENG', prerequisites: ['EENG300'], unlocks: [], corequisites: [] },
     { id: 'EENG388', code: 'EENG388', title: 'Electromagnetic Fields and Waves', credits: 3, description: 'Vector analysis, electrostatics.', category: 'Electrical Engineering', year: 2, semester: 2, major: 'EENG', prerequisites: ['MATH270', 'PHYS220', 'MATH220', 'EENG300'], unlocks: ['EENG440', 'EENG460'], corequisites: [] },
+
+    // MENG Year 2 Fall
+    { id: 'MENG320L', code: 'MENG320L', title: 'Engineering Thermodynamics I Lab', credits: 1, description: 'Thermodynamics experiments.', category: 'Mechanical Engineering', year: 2, semester: 1, major: 'MENG', prerequisites: [], unlocks: ['MENG420L'], corequisites: ['CHEM160', 'MENG320'] },
+    { id: 'MENG300', code: 'MENG300', title: 'Dynamics', credits: 3, description: 'Kinematics and kinetics of particles.', category: 'Mechanical Engineering', year: 2, semester: 1, major: 'MENG', prerequisites: ['ENGL051', 'ENGL101', 'MENG250'], unlocks: ['MENG370', 'MENG370L', 'MENG430', 'MENG450', 'MENG450L'], corequisites: ['PHYS220', 'MATH220'] },
+    { id: 'MENG310', code: 'MENG310', title: 'Engineering Material Science', credits: 3, description: 'Structure and properties of materials.', category: 'Mechanical Engineering', year: 2, semester: 1, major: 'MENG', prerequisites: ['MENG250'], unlocks: ['MENG360', 'MENG360L', 'EENG435'], corequisites: ['MENG225', 'CHEM160'] },
+    { id: 'MENG320', code: 'MENG320', title: 'Engineering Thermodynamics I', credits: 3, description: 'Energy, heat, work, entropy.', category: 'Mechanical Engineering', year: 2, semester: 1, major: 'MENG', prerequisites: ['MENG250'], unlocks: ['MENG420', 'MENG420L'], corequisites: ['CHEM160', 'MENG320L'] },
+
+    // MENG Year 2 Spring
+    { id: 'EENG370', code: 'EENG370', title: 'Industrial Electronics', credits: 3, description: 'Electronics for industrial applications.', category: 'Electrical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: ['EENG250'], unlocks: ['EENG435', 'EENG492'], corequisites: ['EENG370L'] },
+    { id: 'EENG370L', code: 'EENG370L', title: 'Industrial Electronics Lab', credits: 1, description: 'Lab for industrial electronics.', category: 'Electrical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: [], unlocks: [], corequisites: ['EENG370'] },
+    { id: 'MENG360', code: 'MENG360', title: 'Mechanics of Materials I', credits: 3, description: 'Stress, strain, torsion, bending.', category: 'Mechanical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: ['MENG310'], unlocks: ['MENG410'], corequisites: ['MENG360L'] },
+    { id: 'MENG370', code: 'MENG370', title: 'Fluid Mechanics I', credits: 3, description: 'Fluid statics and dynamics.', category: 'Mechanical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: ['MENG300'], unlocks: ['MENG420'], corequisites: ['MATH375', 'MENG370L'] },
+    { id: 'MATH375', code: 'MATH375', title: 'Numerical Methods for Scientists & Engineers', credits: 3, description: 'Numerical solutions to problems.', category: 'Mathematics', year: 2, semester: 2, major: 'MENG', prerequisites: ['MATH270', 'MATH225'], unlocks: [], corequisites: [] },
+    { id: 'MENG370L', code: 'MENG370L', title: 'Fluid Mechanics I Lab', credits: 1, description: 'Fluid mechanics experiments.', category: 'Mechanical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: ['MENG300'], unlocks: [], corequisites: ['MENG370'] },
+    { id: 'MENG360L', code: 'MENG360L', title: 'Mechanics Of Materials I Lab', credits: 1, description: 'Material testing lab.', category: 'Mechanical Engineering', year: 2, semester: 2, major: 'MENG', prerequisites: ['MENG310'], unlocks: [], corequisites: ['MENG360'] },
 
     // Year 3 - Fall Semester (CENG)
     { id: 'CENG430L', code: 'CENG430L', title: 'Linux Lab', credits: 1, description: 'Hands-on Linux system administration.', category: 'Computer Engineering', year: 3, semester: 1, major: 'CENG', prerequisites: ['CENG380', 'CENG325'], unlocks: ['CENG450L'], corequisites: [] },
@@ -102,6 +120,21 @@ export const offlineCourses: CourseWithPrereqs[] = [
     { id: 'CENG460', code: 'CENG460', title: 'Operating Systems', credits: 3, description: 'Process management, OS concepts.', category: 'Elective', year: 3, semester: 1, major: 'CENG', prerequisites: ['CENG380', 'CSCI300'], unlocks: [], corequisites: [] },
     { id: 'CENG470', code: 'CENG470', title: 'Data Structures and Analysis of Algorithms', credits: 3, description: 'Advanced data structures.', category: 'Elective', year: 3, semester: 1, major: 'CENG', prerequisites: ['CENG325', 'CSCI300'], unlocks: [], corequisites: [] },
     { id: 'EENG482', code: 'EENG482', title: 'Electrical Systems Simulation', credits: 3, description: 'Simulation of electrical systems.', category: 'Elective', year: 3, semester: 2, major: 'EENG', prerequisites: ['CSCI250', 'MATH310', 'EENG440'], unlocks: [], corequisites: ['EENG435', 'EENG491'] },
+
+    // MENG Year 3 Fall
+    { id: 'MENG420', code: 'MENG420', title: 'Heat Transfer', credits: 3, description: 'Conduction, convection, radiation.', category: 'Mechanical Engineering', year: 3, semester: 1, major: 'MENG', prerequisites: ['MENG370', 'MENG320'], unlocks: ['MENG495', 'MENG470'], corequisites: ['MENG420L'] },
+    { id: 'MENG420L', code: 'MENG420L', title: 'Heat Transfer Lab', credits: 1, description: 'Heat transfer experiments.', category: 'Mechanical Engineering', year: 3, semester: 1, major: 'MENG', prerequisites: ['MENG320'], unlocks: ['MENG495'], corequisites: ['MENG420'] },
+    { id: 'MENG430', code: 'MENG430', title: 'Mechanical Vibrations I', credits: 3, description: 'Free and forced vibrations.', category: 'Mechanical Engineering', year: 3, semester: 1, major: 'MENG', prerequisites: ['MENG300', 'MATH270'], unlocks: ['MENG495', 'MENG450'], corequisites: ['MENG410', 'MATH310', 'MENG430L'] },
+    { id: 'MENG410', code: 'MENG410', title: 'Mechanics of Materials II', credits: 3, description: 'Advanced stress analysis.', category: 'Mechanical Engineering', year: 3, semester: 1, major: 'MENG', prerequisites: ['MENG360'], unlocks: ['MENG495'], corequisites: [] },
+    { id: 'MENG430L', code: 'MENG430L', title: 'Mechanical Vibrations I Lab', credits: 1, description: 'Vibration experiments.', category: 'Mechanical Engineering', year: 3, semester: 1, major: 'MENG', prerequisites: ['CSCI250'], unlocks: [], corequisites: ['MENG430'] },
+
+    // MENG Year 3 Spring
+    { id: 'MENG495', code: 'MENG495', title: 'Senior Project', credits: 3, description: 'Capstone design project.', category: 'Capstone', year: 3, semester: 2, major: 'MENG', prerequisites: ['EENG435', 'ENGG300', 'ENGL251', 'MENG430', 'MENG420', 'MENG410', 'MENG225'], unlocks: ['ENGG450'], corequisites: [] },
+    { id: 'EENG492', code: 'EENG492', title: 'Electric Machines For Mechanical Engineers', credits: 3, description: 'Motors and generators for ME.', category: 'Electrical Engineering', year: 3, semester: 2, major: 'MENG', prerequisites: ['PHYS220', 'EENG370'], unlocks: [], corequisites: ['MENG430', 'EENG492L'] },
+    { id: 'EENG492L', code: 'EENG492L', title: 'Electric Machines For Mechanical Engineers Lab', credits: 1, description: 'Experiments on electric machines.', category: 'Electrical Engineering', year: 3, semester: 2, major: 'MENG', prerequisites: [], unlocks: [], corequisites: ['EENG492'] },
+    { id: 'MENG450L', code: 'MENG450L', title: 'Mechanical Systems I Lab', credits: 1, description: 'Mechanical systems lab.', category: 'Mechanical Engineering', year: 3, semester: 2, major: 'MENG', prerequisites: ['MENG300', 'MENG225'], unlocks: [], corequisites: ['MENG450'] },
+    { id: 'MENG470', code: 'MENG470', title: 'Internal Combustion Engines', credits: 3, description: 'Theory of IC engines.', category: 'Mechanical Engineering', year: 3, semester: 2, major: 'MENG', prerequisites: ['MENG420'], unlocks: [], corequisites: [] },
+    { id: 'MENG450', code: 'MENG450', title: 'Mechanical Systems I', credits: 3, description: 'Design of mechanical systems.', category: 'Mechanical Engineering', year: 3, semester: 2, major: 'MENG', prerequisites: ['MENG300'], unlocks: [], corequisites: ['MENG430', 'MENG450L'] },
 ];
 
 /** Shape of an offering record for offline use (matches server schema) */
@@ -211,4 +244,10 @@ export const offlineOfferings: OfflineOffering[] = [
     { id: 'off-e8', courseId: 'EENG491', section: 'A', semester: 'Spring', campus: 'Nabatieh', instructor: 'Dr. Motor', dayOfWeek: 'MWF', startTime: '09:00', endTime: '10:00', room: 'ENG 410' },
     { id: 'off-e9', courseId: 'EENG495', section: 'A', semester: 'Spring', campus: 'Nabatieh', instructor: 'Dr. Project', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 505' },
     { id: 'off-e10', courseId: 'EENG460', section: 'A', semester: 'Spring', campus: 'Nabatieh', instructor: 'Dr. Grid', dayOfWeek: 'MWF', startTime: '11:00', endTime: '12:00', room: 'ENG 412' },
+
+    // MENG Offerings
+    { id: 'off-m1', courseId: 'MENG250', section: 'A', semester: 'Spring', campus: 'Nabatieh', instructor: 'Dr. Newton', dayOfWeek: 'MWF', startTime: '08:00', endTime: '09:00', room: 'ENG 301' },
+    { id: 'off-m2', courseId: 'MENG300', section: 'A', semester: 'Fall', campus: 'Nabatieh', instructor: 'Dr. Motion', dayOfWeek: 'TTh', startTime: '10:00', endTime: '11:30', room: 'ENG 302' },
+    { id: 'off-m3', courseId: 'MENG320', section: 'A', semester: 'Fall', campus: 'Nabatieh', instructor: 'Dr. Heat', dayOfWeek: 'MWF', startTime: '13:00', endTime: '14:00', room: 'ENG 305' },
+    { id: 'off-m4', courseId: 'MENG495', section: 'A', semester: 'Spring', campus: 'Nabatieh', instructor: 'Dr. MechProject', dayOfWeek: 'TTh', startTime: '09:00', endTime: '10:30', room: 'ENG 505' },
 ];

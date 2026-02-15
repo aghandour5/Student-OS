@@ -35,6 +35,7 @@ const DEFAULT_PROFILE: UserProfile = {
   progress: {
     'CENG': { ...DEFAULT_MAJOR_PROGRESS },
     'EENG': { ...DEFAULT_MAJOR_PROGRESS },
+    'MENG': { ...DEFAULT_MAJOR_PROGRESS },
   },
   notes: [],
 };
@@ -121,6 +122,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     retry: 1,
     staleTime: 30 * 1000,
     refetchInterval: 15 * 1000,
+
   });
 
   // Check if server is available and successfully fetched data
@@ -132,7 +134,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     // Normalize to 'CENG' or 'EENG' just in case
     const currentMajor = profile.major === 'Electrical Engineering' ? 'EENG' :
       profile.major === 'Computer Engineering' ? 'CENG' :
-        profile.major;
+        profile.major === 'Mechanical Engineering' ? 'MENG' :
+          profile.major;
 
     return rawCourses.filter(c => c.major === currentMajor || c.major === 'shared');
   }, [hasServerConnection, serverCourses, profile.major]);
