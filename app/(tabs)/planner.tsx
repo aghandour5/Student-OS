@@ -5,30 +5,37 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { GestureDetector } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
+import { AppFooter } from '@/components/AppFooter';
 import { useAcademic } from '@/lib/academic-context';
 import type { SemesterPlan, CourseWithPrereqs } from '@shared/schema';
 import type { OfflineOffering } from '@/lib/offline-data';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useConfirm } from '@/lib/confirm-context';
 
-const MAX_CREDITS = 18;
+const FALL_SPRING_MAX_CREDITS = 18;
+const SUMMER_MAX_CREDITS = 9;
+
+const getMaxCredits = (season: string) => {
+  return season === 'Summer' ? SUMMER_MAX_CREDITS : FALL_SPRING_MAX_CREDITS;
+};
 
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const {
-    profile, courses, offerings, isLoading,
+    profile, semesterPlans, completedCourses, inProgressCourses, courses, offerings, isLoading,
     addSemesterPlan, removeSemesterPlan,
     addCourseToSemester, removeCourseFromSemester,
     setSelectedOffering, getOfferingsForCourse,
     getCourseStatus, arePrereqsMet, getMissingPrereqs,
   } = useAcademic();
   const { colors } = useTheme();
+  const { confirm } = useConfirm();
 
   const [showNewSemester, setShowNewSemester] = useState(false);
   const [showAddCourse, setShowAddCourse] = useState<string | null>(null);
@@ -44,16 +51,84 @@ export default function PlannerScreen() {
 
   const allAssignedCourseIds = useMemo(() => {
     const ids = new Set<string>();
-    profile.semesterPlans.forEach(p => p.courseIds.forEach(id => ids.add(id)));
+    semesterPlans.forEach(p => p.courseIds.forEach(id => ids.add(id)));
     return ids;
-  }, [profile.semesterPlans]);
+  }, [semesterPlans]);
 
   const getAvailableForSemester = (plan: SemesterPlan) => {
-    return courses.filter(c => {
-      if (allAssignedCourseIds.has(c.id)) return false;
-      if (profile.completedCourses.includes(c.id)) return false;
-      return true;
-    });
+    // 1. Identify courses needed for FUTURE semesters (Critical Path Analysis)
+    // Find all courses in plans that are temporally after the current plan
+    const futurePlanIds = semesterPlans
+      .filter(p => (p.year > plan.year) || (p.year === plan.year && getSeasonOrder(p.season) > getSeasonOrder(plan.season)))
+      .map(p => p.id);
+
+    const futureCourseIds = new Set<string>();
+    semesterPlans
+      .filter(p => futurePlanIds.includes(p.id))
+      .forEach(p => p.courseIds.forEach(id => futureCourseIds.add(id)));
+
+    // 2. Score and Sort
+    const scored = courses
+      .filter(c => {
+        if (allAssignedCourseIds.has(c.id)) return false;
+        if (completedCourses.includes(c.id)) return false;
+
+        // SEMESTER AVAILABILITY CHECK
+        // Foundation courses (year 0) are available every semester.
+        // For other years, strict availability: Fall (1) only in Fall, Spring (2) only in Spring.
+        if (c.year !== 0) {
+          if (plan.season === 'Fall' && c.semester !== 1) return false;
+          if (plan.season === 'Spring' && c.semester !== 2) return false;
+        }
+
+        return true;
+      })
+      .map(c => {
+        let score = 0;
+        const status = getCourseStatus(c.id);
+        const isPrereqMet = status === 'available';
+
+        // STATUS
+        if (isPrereqMet) score += 1000;
+        else score -= 1000; // Push locked to bottom
+
+        // COREQUISITES (High priority if partner is in THIS semester)
+        if (c.corequisites && c.corequisites.length > 0) {
+          const hasCoreqInPlan = c.corequisites.some(coreqId => plan.courseIds.includes(coreqId));
+          if (hasCoreqInPlan) score += 2000; // Must take together!
+        }
+
+        // CRITICAL PATH (Is this a prereq for something planned in the future?)
+        // Check if 'c' is a prereq for any course in futureCourseIds
+        // This is expensive if we scan all courses. Instead check if 'c' unlocks anything in futureCourseIds.
+        const unlocksFuture = c.unlocks.some(uid => futureCourseIds.has(uid));
+        if (unlocksFuture) score += 500;
+
+        // UNLOCKING POWER
+        score += c.unlocks.length * 10;
+
+        return { course: c, score, isLocked: !isPrereqMet };
+      })
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        return a.course.code.localeCompare(b.course.code);
+      });
+
+    // Mark top 3 available courses as "Recommended" if they have a positive score
+    return scored.map((item, index) => ({
+      ...item.course,
+      isRecommended: !item.isLocked && index < 3 && item.score > 1000,
+      sortScore: item.score
+    }));
+  };
+
+  const getSeasonOrder = (season: string) => {
+    switch (season) {
+      case 'Spring': return 0;
+      case 'Summer': return 1;
+      case 'Fall': return 2;
+      default: return 3;
+    }
   };
 
   const getSemesterCredits = (plan: SemesterPlan) => {
@@ -81,16 +156,17 @@ export default function PlannerScreen() {
     const credits = getSemesterCredits(plan);
 
     // Hard credit cap
-    if (credits > MAX_CREDITS) {
-      warnings.push(`⚠️ Exceeds limit: ${credits}/${MAX_CREDITS} credits`);
+    const maxCredits = getMaxCredits(plan.season);
+    if (credits > maxCredits) {
+      warnings.push(`⚠️ Exceeds limit: ${credits}/${maxCredits} credits`);
     }
 
     // Prerequisite checks
     for (const courseId of plan.courseIds) {
-      if (!arePrereqsMet(courseId) && !profile.completedCourses.includes(courseId)) {
+      if (!arePrereqsMet(courseId) && !completedCourses.includes(courseId)) {
         const missing = getMissingPrereqs(courseId);
         const inThisSemester = missing.filter(m => plan.courseIds.includes(m.id));
-        const trulyMissing = missing.filter(m => !plan.courseIds.includes(m.id) && !profile.completedCourses.includes(m.id));
+        const trulyMissing = missing.filter(m => !plan.courseIds.includes(m.id) && !completedCourses.includes(m.id));
         if (trulyMissing.length > 0) {
           const course = courseMap.get(courseId);
           warnings.push(`${course?.code}: Missing prereqs - ${trulyMissing.map(m => m.code).join(', ')}`);
@@ -98,6 +174,23 @@ export default function PlannerScreen() {
         if (inThisSemester.length > 0) {
           const course = courseMap.get(courseId);
           warnings.push(`${course?.code}: Corequisite with ${inThisSemester.map(m => m.code).join(', ')} (same semester)`);
+        }
+      }
+    }
+
+    // Corequisite checks — must be in the same semester or already completed
+    const coreqWarned = new Set<string>();
+    for (const courseId of plan.courseIds) {
+      const course = courseMap.get(courseId);
+      if (!course?.corequisites?.length) continue;
+      for (const coreqId of course.corequisites) {
+        const pairKey = [courseId, coreqId].sort().join('-');
+        if (coreqWarned.has(pairKey)) continue;
+        // Check if coreq is missing from plan and not previously completed
+        if (!plan.courseIds.includes(coreqId) && !completedCourses.includes(coreqId) && !inProgressCourses.includes(coreqId)) {
+          const coreqCourse = courseMap.get(coreqId);
+          warnings.push(`📋 ${course.code}: Missing corequisite ${coreqCourse?.code || coreqId} (must take together)`);
+          coreqWarned.add(pairKey);
         }
       }
     }
@@ -132,6 +225,7 @@ export default function PlannerScreen() {
     return warnings;
   };
 
+  // Calculate a difficulty score (1-5) based on course mix and load
   const getDifficulty = (plan: SemesterPlan): number => {
     const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
     if (coursesInPlan.length === 0) return 0;
@@ -141,7 +235,7 @@ export default function PlannerScreen() {
     let diff = avgYear;
 
     // Math-heavy penalty
-    const mathCount = coursesInPlan.filter(c => c.category === 'Mathematics' || c.category === 'Foundation' && c.code.startsWith('MATH')).length;
+    const mathCount = coursesInPlan.filter(c => c.category === 'Mathematics' || (c.category === 'Foundation' && c.code.startsWith('MATH'))).length;
     if (mathCount >= 3) diff += 1.5;
     else if (mathCount >= 2) diff += 0.5;
 
@@ -156,8 +250,11 @@ export default function PlannerScreen() {
 
     // Credit load factor 
     const credits = getSemesterCredits(plan);
-    if (credits > MAX_CREDITS) diff += 1.5;
-    else if (credits >= 16) diff += 0.5;
+    const maxCredits = getMaxCredits(plan.season);
+    const heavyLoad = plan.season === 'Summer' ? 7 : 16;
+
+    if (credits > maxCredits) diff += 1.5;
+    else if (credits >= heavyLoad) diff += 0.5;
 
     return Math.min(5, Math.max(1, Math.round(diff)));
   };
@@ -191,22 +288,16 @@ export default function PlannerScreen() {
 
 
 
-  const handleRemoveSemester = (planId: string) => {
-    Alert.alert(
-      'Remove Semester',
-      'Are you sure you want to remove this semester plan?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            removeSemesterPlan(planId);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          },
-        },
-      ]
-    );
+  const handleRemoveSemester = async (planId: string) => {
+    if (await confirm({
+      title: 'Remove Semester',
+      message: 'Are you sure you want to remove this semester plan?',
+      confirmText: 'Remove',
+      variant: 'danger',
+    })) {
+      removeSemesterPlan(planId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
   };
 
   if (isLoading) {
@@ -217,10 +308,10 @@ export default function PlannerScreen() {
     );
   }
 
-  const sortedPlans = [...profile.semesterPlans].sort((a, b) => {
+  const sortedPlans = [...semesterPlans].sort((a, b) => {
     if (a.year !== b.year) return a.year - b.year;
-    const order = { Fall: 0, Spring: 1, Summer: 2 };
-    return order[a.season] - order[b.season];
+    const order: Record<string, number> = { Spring: 0, Summer: 1, Fall: 2 };
+    return (order[a.season] ?? 3) - (order[b.season] ?? 3);
   });
 
   return (
@@ -346,7 +437,7 @@ export default function PlannerScreen() {
                   <View>
                     <Text style={[styles.semesterName, { color: colors.text }]}>{plan.name}</Text>
                     <Text style={[styles.semesterMeta, { color: colors.textSecondary }]}>
-                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > MAX_CREDITS ? Colors.danger : credits > 15 ? Colors.warning : colors.textSecondary, fontWeight: credits > 15 ? '700' : '400' }}>{credits}/{MAX_CREDITS} credits</Text>
+                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > getMaxCredits(plan.season) ? Colors.danger : credits > (plan.season === 'Summer' ? 6 : 15) ? Colors.warning : colors.textSecondary, fontWeight: credits > (plan.season === 'Summer' ? 6 : 15) ? '700' : '400' }}>{credits}/{getMaxCredits(plan.season)} credits</Text>
                     </Text>
                   </View>
                 </View>
@@ -367,15 +458,21 @@ export default function PlannerScreen() {
               {isExpanded && (
                 <View style={[styles.semesterBody, { borderTopColor: colors.cardBorder }]}>
                   {(() => {
-                    const creditColor = credits < 15 ? '#10B981' : credits <= MAX_CREDITS ? '#0EA5E9' : '#EF4444';
-                    const creditLabel = credits < 15 ? 'Light load' : credits <= MAX_CREDITS ? 'Normal load' : 'Over limit!';
+                    const maxCredits = getMaxCredits(plan.season);
+                    const heavyLoad = plan.season === 'Summer' ? 7 : 15;
+                    // Lower threshold for "Light load" in summer (e.g., < 4) or keep simple?
+                    // Let's scale it slightly: < 15/18 is ~83%. < 7/9 is ~77%. 
+                    const lightLoad = plan.season === 'Summer' ? 4 : 15;
+
+                    const creditColor = credits < lightLoad ? '#10B981' : credits <= maxCredits ? '#0EA5E9' : '#EF4444';
+                    const creditLabel = credits < lightLoad ? 'Light load' : credits <= maxCredits ? 'Normal load' : 'Over limit!';
 
                     const difficulty = getDifficulty(plan);
 
                     const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
                     const coursesWithPrereqs = coursesInPlan.filter(c => c.prerequisites.length > 0);
                     const coursesWithMetPrereqs = coursesWithPrereqs.filter(c =>
-                      arePrereqsMet(c.id) || profile.completedCourses.includes(c.id)
+                      arePrereqsMet(c.id) || completedCourses.includes(c.id)
                     );
                     const allMet = coursesWithPrereqs.length === 0 || coursesWithMetPrereqs.length === coursesWithPrereqs.length;
                     const unmetCount = coursesWithPrereqs.length - coursesWithMetPrereqs.length;
@@ -538,6 +635,8 @@ export default function PlannerScreen() {
             </View>
           );
         })}
+
+        <AppFooter />
       </ScrollView>
 
       <BottomSheet
@@ -556,7 +655,7 @@ export default function PlannerScreen() {
               <Text style={[styles.yearLabel, { color: colors.textSecondary }]}>{year}</Text>
               <View style={styles.seasonRow}>
                 {(['Fall', 'Spring', 'Summer'] as const).map(season => {
-                  const exists = profile.semesterPlans.some(p => p.season === season && p.year === year);
+                  const exists = semesterPlans.some(p => p.season === season && p.year === year);
                   return (
                     <Pressable
                       key={`${season}-${year}`}
@@ -588,17 +687,19 @@ export default function PlannerScreen() {
         title="Add Course"
         subtitle={(() => {
           if (!showAddCourse) return undefined;
-          const plan = profile.semesterPlans.find(p => p.id === showAddCourse);
+          const plan = semesterPlans.find(p => p.id === showAddCourse);
           if (!plan) return undefined;
           const used = getSemesterCredits(plan);
-          const remaining = MAX_CREDITS - used;
+          const max = getMaxCredits(plan.season);
+          const remaining = max - used;
           return remaining > 0 ? `${remaining} credits remaining` : 'Credit limit reached';
         })()}
       >
         {showAddCourse && (() => {
-          const currentPlan = profile.semesterPlans.find(p => p.id === showAddCourse);
+          const currentPlan = semesterPlans.find(p => p.id === showAddCourse);
           const currentCredits = currentPlan ? getSemesterCredits(currentPlan) : 0;
-          const remainingCredits = MAX_CREDITS - currentCredits;
+          const maxCredits = currentPlan ? getMaxCredits(currentPlan.season) : 18;
+          const remainingCredits = maxCredits - currentCredits;
           return (
             <FlatList
               data={getAvailableForSemester(currentPlan!)}
@@ -610,19 +711,19 @@ export default function PlannerScreen() {
                 remainingCredits <= 0 ? (
                   <View style={[styles.creditCapBanner, { backgroundColor: Colors.danger + '15', borderColor: Colors.danger + '30' }]}>
                     <Ionicons name="alert-circle" size={16} color={Colors.danger} />
-                    <Text style={[styles.creditCapText, { color: Colors.danger }]}>Credit limit reached ({MAX_CREDITS}/{MAX_CREDITS})</Text>
+                    <Text style={[styles.creditCapText, { color: Colors.danger }]}>Credit limit reached ({maxCredits}/{maxCredits})</Text>
                   </View>
                 ) : null
               }
-              renderItem={({ item }) => {
-                const met = arePrereqsMet(item.id) || profile.completedCourses.includes(item.id);
+              renderItem={({ item }: { item: CourseWithPrereqs & { isRecommended?: boolean } }) => {
+                const met = arePrereqsMet(item.id) || completedCourses.includes(item.id);
                 const wouldExceed = item.credits > remainingCredits;
                 const disabled = wouldExceed;
                 return (
                   <Pressable
                     onPress={() => {
                       if (disabled) {
-                        Alert.alert('Credit Limit', `Adding ${item.code} (${item.credits} cr) would exceed the ${MAX_CREDITS}-credit limit.`);
+                        Alert.alert('Credit Limit', `Adding ${item.code} (${item.credits} cr) would exceed the ${maxCredits}-credit limit.`);
                         return;
                       }
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -632,7 +733,15 @@ export default function PlannerScreen() {
                     style={[styles.addCourseItem, (!met || disabled) && styles.addCourseItemLocked]}
                   >
                     <View style={styles.addCourseItemLeft}>
-                      <Text style={[styles.addCourseCode, { color: colors.textMuted }]}>{item.code}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.addCourseCode, { color: colors.textMuted }]}>{item.code}</Text>
+                        {item.isRecommended && (
+                          <View style={[styles.recommendedBadge, { backgroundColor: Colors.primary + '20' }]}>
+                            <Ionicons name="star" size={10} color={Colors.primary} />
+                            <Text style={[styles.recommendedText, { color: Colors.primary }]}>Recommended</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={[styles.addCourseTitle, { color: disabled ? colors.textMuted : colors.text }]}>{item.title}</Text>
                       {!met && (
                         <View style={styles.lockedRow}>
@@ -665,7 +774,7 @@ export default function PlannerScreen() {
         subtitle={showSelectSection ? courseMap.get(showSelectSection.courseId)?.title : undefined}
       >
         {showSelectSection && (() => {
-          const plan = profile.semesterPlans.find(p => p.id === showSelectSection.planId);
+          const plan = semesterPlans.find(p => p.id === showSelectSection.planId);
           const semesterSeason = plan?.season;
           const availOfferings = getOfferingsForCourse(showSelectSection.courseId, semesterSeason);
           const currentSelection = plan?.selectedOfferings?.[showSelectSection.courseId];
@@ -1073,6 +1182,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  recommendedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  recommendedText: {
+    fontSize: 10,
+    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
   },
   summaryItem: {
     flex: 1,

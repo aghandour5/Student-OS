@@ -1,3 +1,10 @@
+/**
+ * React Query client configuration and API request utilities.
+ *
+ * The app uses an offline-first approach: the server URL is optional.
+ * When EXPO_PUBLIC_DOMAIN is set, queries will attempt to fetch from the
+ * Express server; otherwise the app runs entirely offline with embedded data.
+ */
 import { fetch } from "expo/fetch";
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
@@ -6,18 +13,17 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string | null} The API base URL, or null if offline mode
  */
 export function getApiUrl(): string | null {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
+  const host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    // Offline mode - no server configured
     return null;
   }
 
-  let url = new URL(`https://${host}`);
-
-  return url.href;
+  // Always use http — the Express server does not use SSL
+  return `http://${host}`;
 }
 
+/** Throw a descriptive error if the HTTP response indicates failure */
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -25,6 +31,10 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+/**
+ * Generic API request helper — builds the full URL from the base URL
+ * and the route, sends JSON body if provided, and validates the response.
+ */
 export async function apiRequest(
   method: string,
   route: string,
@@ -75,6 +85,11 @@ export const getQueryFn: <T>(options: {
       return await res.json();
     };
 
+/**
+ * Shared QueryClient with aggressive caching (staleTime: Infinity)
+ * since course data rarely changes during a session.
+ * Retry is disabled to avoid hanging on offline mode.
+ */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

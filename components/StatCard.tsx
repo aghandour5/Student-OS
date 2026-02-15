@@ -1,3 +1,8 @@
+/**
+ * StatCard — Compact metric display used in dashboard grids.
+ * Shows an icon, numeric value, label, and optional subtitle.
+ * Supports a `small` variant and optional `onPress` for tappable cards.
+ */
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';

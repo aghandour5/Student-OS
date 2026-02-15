@@ -1,3 +1,13 @@
+/**
+ * AcademicContext — Central state manager for student academic data.
+ *
+ * Architecture:
+ * - Offline-first: uses embedded course data from offline-data.ts as the default.
+ * - When a server URL is configured (EXPO_PUBLIC_DOMAIN), attempts to fetch
+ *   live course/offering data via React Query, falling back to offline data.
+ * - Student profile (completed courses, grades, semester plans, notes) is
+ *   persisted to AsyncStorage and hydrated on launch.
+ */
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
@@ -8,19 +18,28 @@ import {
 import { offlineCourses, offlineOfferings, type OfflineOffering } from './offline-data';
 import { getApiUrl } from './query-client';
 
+// AsyncStorage key for persisted student profile
 const STORAGE_KEY = '@uniflow_user_profile';
 
-const DEFAULT_PROFILE: UserProfile = {
-  major: 'Computer Engineering',
-  campus: 'Main',
-  startYear: 2024,
+const DEFAULT_MAJOR_PROGRESS = {
   completedCourses: [],
   inProgressCourses: [],
   semesterPlans: [],
   grades: [],
+};
+
+const DEFAULT_PROFILE: UserProfile = {
+  major: 'CENG',
+  campus: 'Nabatieh',
+  startYear: 2024,
+  progress: {
+    'CENG': { ...DEFAULT_MAJOR_PROGRESS },
+    'EENG': { ...DEFAULT_MAJOR_PROGRESS },
+  },
   notes: [],
 };
 
+/** Course lifecycle states — determines visual treatment and interaction availability */
 type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'future';
 
 interface AcademicContextValue {
@@ -38,6 +57,10 @@ interface AcademicContextValue {
   toggleCourseInProgress: (courseId: string) => void;
   toggleYearCompleted: (year: number) => void;
   isYearCompleted: (year: number) => boolean;
+  grades: UserGrade[];
+  semesterPlans: SemesterPlan[];
+  completedCourses: string[];
+  inProgressCourses: string[];
   setGrade: (courseId: string, grade: string, score: number) => void;
   removeGrade: (courseId: string) => void;
   addSemesterPlan: (plan: SemesterPlan) => void;
@@ -55,6 +78,7 @@ interface AcademicContextValue {
   completedCredits: number;
   inProgressCredits: number;
   resetProfile: () => void;
+  setMajor: (major: string) => void;
 }
 
 const AcademicContext = createContext<AcademicContextValue | null>(null);
@@ -66,7 +90,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
 
   // Check if server is available
   const serverUrl = getApiUrl();
-  const { data: serverCourses, isLoading: serverLoading } = useQuery<CourseWithPrereqs[]>({
+  const { data: serverCourses, isLoading: serverLoading, isError: coursesError } = useQuery<CourseWithPrereqs[]>({
     queryKey: ['/api/courses'],
     queryFn: async () => {
       const baseUrl = getApiUrl();
@@ -79,7 +103,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     },
     enabled: !!serverUrl, // Only run if server URL is configured
     retry: 1,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 15 * 1000, // Re-check every 10 seconds for dynamic status
   });
 
   // Fetch offerings from server
@@ -94,67 +119,122 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     },
     enabled: !!serverUrl,
     retry: 1,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 15 * 1000,
   });
 
-  // Use server data if available, otherwise fall back to offline data
-  const courses = serverCourses ?? offlineCourses;
-  const offerings = serverOfferings ?? offlineOfferings;
-  // Only show loading if we're actually trying to fetch from server
-  const coursesLoading = serverUrl && serverLoading && !offlineCourses.length;
+  // Check if server is available and successfully fetched data
+  const hasServerConnection = serverCourses !== undefined && !coursesError;
 
-  // Update isOnline status based on server availability
+  // Filter courses based on selected major (or shared)
+  const courses = useMemo(() => {
+    const rawCourses = hasServerConnection ? serverCourses : offlineCourses;
+    // Normalize to 'CENG' or 'EENG' just in case
+    const currentMajor = profile.major === 'Electrical Engineering' ? 'EENG' :
+      profile.major === 'Computer Engineering' ? 'CENG' :
+        profile.major;
+
+    return rawCourses.filter(c => c.major === currentMajor || c.major === 'shared');
+  }, [hasServerConnection, serverCourses, profile.major]);
+
+  // Filter offerings based on available courses
+  const offerings = useMemo(() => {
+    const rawOfferings = (hasServerConnection && serverOfferings) ? serverOfferings : offlineOfferings;
+    const courseIds = new Set(courses.map(c => c.id));
+    return rawOfferings.filter(o => courseIds.has(o.courseId));
+  }, [hasServerConnection, serverOfferings, courses]);
+
+  // Dynamically update isOnline status — reacts to successful fetches or errors
   useEffect(() => {
-    if (serverCourses !== undefined) {
+    if (serverCourses !== undefined && !coursesError) {
       setIsOnline(true);
-    } else if (serverUrl !== null) {
-      // Server was configured but fetch failed or not yet complete
-      setIsOnline(false);
     } else {
-      // No server configured (offline mode)
       setIsOnline(false);
     }
-  }, [serverCourses, serverUrl]);
+  }, [serverCourses, coursesError]);
 
+  // Hydrate profile from AsyncStorage on mount. Merges saved data with
+  // DEFAULT_PROFILE to handle schema additions between versions.
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then(stored => {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          setProfile({ ...DEFAULT_PROFILE, ...parsed });
-        } catch {
+
+          // Normalize legacy major names
+          if (parsed.major === 'Computer Engineering') parsed.major = 'CENG';
+          if (parsed.major === 'Electrical Engineering') parsed.major = 'EENG';
+
+          // Migration: Move legacy fields to progress['CENG'] if needed
+          if (!parsed.progress) {
+            console.log('Migrating legacy profile to multi-major structure...');
+            const legacyProgress = {
+              completedCourses: parsed.completedCourses || [],
+              inProgressCourses: parsed.inProgressCourses || [],
+              semesterPlans: parsed.semesterPlans || [],
+              grades: parsed.grades || [],
+            };
+            parsed.progress = {
+              'CENG': legacyProgress,
+              'EENG': { ...DEFAULT_MAJOR_PROGRESS },
+            };
+            // Clean up legacy fields (optional, but good for clarity)
+            delete parsed.completedCourses;
+            delete parsed.inProgressCourses;
+            delete parsed.semesterPlans;
+            delete parsed.grades;
+          }
+
+          // Merge deeply to ensure 'EENG' key exists if missing from partial updates
+          const merged = { ...DEFAULT_PROFILE, ...parsed };
+          if (!merged.progress['EENG']) merged.progress['EENG'] = { ...DEFAULT_MAJOR_PROGRESS };
+
+          setProfile(merged);
+        } catch (e) {
+          console.error('Failed to parse profile:', e);
           setProfile(DEFAULT_PROFILE);
         }
+      } else {
+        setProfile(DEFAULT_PROFILE);
       }
       setLoaded(true);
     });
   }, []);
 
+  // Persist profile to AsyncStorage whenever it changes (after initial hydration)
   useEffect(() => {
     if (loaded) {
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
     }
   }, [profile, loaded]);
 
+  // O(1) course lookup used by most callbacks below
   const courseMap = useMemo(() => {
     const map = new Map<string, CourseWithPrereqs>();
     courses.forEach(c => map.set(c.id, c));
     return map;
   }, [courses]);
 
+  /** Check if all prerequisite courses are in the student's completedCourses list */
   const arePrereqsMet = useCallback((courseId: string): boolean => {
     const course = courseMap.get(courseId);
     if (!course) return false;
     if (course.prerequisites.length === 0) return true;
-    return course.prerequisites.every(pid => profile.completedCourses.includes(pid));
-  }, [courseMap, profile.completedCourses]);
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return false;
+    return course.prerequisites.every(pid => currentProgress.completedCourses.includes(pid));
+  }, [courseMap, profile]);
 
+  /** Resolve course status with priority: completed > in_progress > available > locked */
   const getCourseStatus = useCallback((courseId: string): CourseStatus => {
-    if (profile.completedCourses.includes(courseId)) return 'completed';
-    if (profile.inProgressCourses.includes(courseId)) return 'in_progress';
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return 'locked';
+
+    if (currentProgress.completedCourses.includes(courseId)) return 'completed';
+    if (currentProgress.inProgressCourses.includes(courseId)) return 'in_progress';
     if (arePrereqsMet(courseId)) return 'available';
     return 'locked';
-  }, [profile.completedCourses, profile.inProgressCourses, arePrereqsMet]);
+  }, [profile, arePrereqsMet]);
 
   const getPrerequisitesFor = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
@@ -171,43 +251,65 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const getMissingPrereqs = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
     if (!course) return [];
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return course.prerequisites.map(pid => courseMap.get(pid)).filter(Boolean) as CourseWithPrereqs[];
     return course.prerequisites
-      .filter(pid => !profile.completedCourses.includes(pid))
+      .filter(pid => !currentProgress.completedCourses.includes(pid))
       .map(pid => courseMap.get(pid))
       .filter(Boolean) as CourseWithPrereqs[];
-  }, [courseMap, profile.completedCourses]);
+  }, [courseMap, profile]);
 
+  /** Toggle a course between completed and not-completed.
+   *  Completing also removes from inProgress; un-completing also removes its grade. */
   const toggleCourseCompleted = useCallback((courseId: string) => {
     setProfile(prev => {
-      const isCompleted = prev.completedCourses.includes(courseId);
+      const currentP = prev.progress[prev.major];
+      const isCompleted = currentP.completedCourses.includes(courseId);
+
+      let newP;
       if (isCompleted) {
-        return {
-          ...prev,
-          completedCourses: prev.completedCourses.filter(id => id !== courseId),
-          grades: prev.grades.filter(g => g.courseId !== courseId),
+        newP = {
+          ...currentP,
+          completedCourses: currentP.completedCourses.filter(id => id !== courseId),
+          grades: currentP.grades.filter(g => g.courseId !== courseId),
+        };
+      } else {
+        newP = {
+          ...currentP,
+          completedCourses: [...currentP.completedCourses, courseId],
+          inProgressCourses: currentP.inProgressCourses.filter(id => id !== courseId),
         };
       }
+
       return {
         ...prev,
-        completedCourses: [...prev.completedCourses, courseId],
-        inProgressCourses: prev.inProgressCourses.filter(id => id !== courseId),
+        progress: { ...prev.progress, [prev.major]: newP }
       };
     });
   }, []);
 
   const toggleCourseInProgress = useCallback((courseId: string) => {
     setProfile(prev => {
-      const isInProgress = prev.inProgressCourses.includes(courseId);
+      const currentP = prev.progress[prev.major];
+      const isInProgress = currentP.inProgressCourses.includes(courseId);
+
+      let newP;
       if (isInProgress) {
-        return {
-          ...prev,
-          inProgressCourses: prev.inProgressCourses.filter(id => id !== courseId),
+        newP = {
+          ...currentP,
+          inProgressCourses: currentP.inProgressCourses.filter(id => id !== courseId),
+        };
+      } else {
+        newP = {
+          ...currentP,
+          inProgressCourses: [...currentP.inProgressCourses, courseId],
+          completedCourses: currentP.completedCourses.filter(id => id !== courseId),
         };
       }
+
       return {
         ...prev,
-        inProgressCourses: [...prev.inProgressCourses, courseId],
-        completedCourses: prev.completedCourses.filter(id => id !== courseId),
+        progress: { ...prev.progress, [prev.major]: newP }
       };
     });
   }, []);
@@ -215,113 +317,186 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const isYearCompleted = useCallback((year: number): boolean => {
     const yearCourses = courses.filter(c => c.year === year);
     if (yearCourses.length === 0) return false;
-    return yearCourses.every(c => profile.completedCourses.includes(String(c.id)));
-  }, [courses, profile.completedCourses]);
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return false;
+    return yearCourses.every(c => currentProgress.completedCourses.includes(String(c.id)));
+  }, [courses, profile]);
 
   const toggleYearCompleted = useCallback((year: number) => {
     setProfile(prev => {
-      const yearCourseIds = courses.filter(c => c.year === year).map(c => String(c.id));
-      const allCompleted = yearCourseIds.every(id => prev.completedCourses.includes(id));
+      const currentP = prev.progress[prev.major];
+      if (!currentP) return prev; // Safety check
 
+      const yearCourseIds = courses.filter(c => c.year === year).map(c => String(c.id));
+      const allCompleted = yearCourseIds.every(id => currentP.completedCourses.includes(id));
+
+      let newP;
       if (allCompleted) {
-        return {
-          ...prev,
-          completedCourses: prev.completedCourses.filter(id => !yearCourseIds.includes(id)),
-          grades: prev.grades.filter(g => !yearCourseIds.includes(g.courseId)),
+        // Unchecking a year: also uncheck all LATER years (cascade down)
+        const yearsToRemove = courses
+          .filter(c => c.year >= year)
+          .map(c => String(c.id));
+        newP = {
+          ...currentP,
+          completedCourses: currentP.completedCourses.filter(id => !yearsToRemove.includes(id)),
+          grades: currentP.grades.filter(g => !yearsToRemove.includes(g.courseId)),
+        };
+      } else {
+        // Checking a year: also check all PREVIOUS years (cascade up)
+        const yearsToAdd = courses
+          .filter(c => c.year <= year)
+          .map(c => String(c.id));
+        const newCompleted = [...new Set([...currentP.completedCourses, ...yearsToAdd])];
+        const newInProgress = currentP.inProgressCourses.filter(id => !yearsToAdd.includes(id));
+        newP = {
+          ...currentP,
+          completedCourses: newCompleted,
+          inProgressCourses: newInProgress,
         };
       }
-      const newCompleted = [...new Set([...prev.completedCourses, ...yearCourseIds])];
-      const newInProgress = prev.inProgressCourses.filter(id => !yearCourseIds.includes(id));
+
       return {
         ...prev,
-        completedCourses: newCompleted,
-        inProgressCourses: newInProgress,
+        progress: { ...prev.progress, [prev.major]: newP }
       };
     });
   }, [courses]);
 
   const setGrade = useCallback((courseId: string, grade: string, score: number) => {
-    setProfile(prev => ({
-      ...prev,
-      grades: [
-        ...prev.grades.filter(g => g.courseId !== courseId),
-        { courseId, grade, score },
-      ],
-      completedCourses: prev.completedCourses.includes(courseId)
-        ? prev.completedCourses
-        : [...prev.completedCourses, courseId],
-      inProgressCourses: prev.inProgressCourses.filter(id => id !== courseId),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        grades: [
+          ...currentP.grades.filter(g => g.courseId !== courseId),
+          { courseId, grade, score },
+        ],
+        completedCourses: currentP.completedCourses.includes(courseId)
+          ? currentP.completedCourses
+          : [...currentP.completedCourses, courseId],
+        inProgressCourses: currentP.inProgressCourses.filter(id => id !== courseId),
+      };
+
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const removeGrade = useCallback((courseId: string) => {
-    setProfile(prev => ({
-      ...prev,
-      grades: prev.grades.filter(g => g.courseId !== courseId),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        grades: currentP.grades.filter(g => g.courseId !== courseId),
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const addSemesterPlan = useCallback((plan: SemesterPlan) => {
-    setProfile(prev => ({
-      ...prev,
-      semesterPlans: [...prev.semesterPlans, plan],
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        semesterPlans: [...currentP.semesterPlans, plan],
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const removeSemesterPlan = useCallback((planId: string) => {
-    setProfile(prev => ({
-      ...prev,
-      semesterPlans: prev.semesterPlans.filter(p => p.id !== planId),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        semesterPlans: currentP.semesterPlans.filter(p => p.id !== planId),
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const addCourseToSemester = useCallback((planId: string, courseId: string) => {
-    setProfile(prev => ({
-      ...prev,
-      semesterPlans: prev.semesterPlans.map(plan =>
-        plan.id === planId && !plan.courseIds.includes(courseId)
-          ? { ...plan, courseIds: [...plan.courseIds, courseId] }
-          : plan
-      ),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        semesterPlans: currentP.semesterPlans.map(plan =>
+          plan.id === planId && !plan.courseIds.includes(courseId)
+            ? { ...plan, courseIds: [...plan.courseIds, courseId] }
+            : plan
+        ),
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const removeCourseFromSemester = useCallback((planId: string, courseId: string) => {
-    setProfile(prev => ({
-      ...prev,
-      semesterPlans: prev.semesterPlans.map(plan => {
-        if (plan.id !== planId) return plan;
-        const newOfferings = { ...plan.selectedOfferings };
-        delete newOfferings[courseId];
-        return {
-          ...plan,
-          courseIds: plan.courseIds.filter(id => id !== courseId),
-          selectedOfferings: newOfferings,
-        };
-      }),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        semesterPlans: currentP.semesterPlans.map(plan => {
+          if (plan.id !== planId) return plan;
+          const newOfferings = { ...plan.selectedOfferings };
+          delete newOfferings[courseId];
+          return {
+            ...plan,
+            courseIds: plan.courseIds.filter(id => id !== courseId),
+            selectedOfferings: newOfferings,
+          };
+        }),
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const setSelectedOffering = useCallback((planId: string, courseId: string, offeringId: string) => {
-    setProfile(prev => ({
-      ...prev,
-      semesterPlans: prev.semesterPlans.map(plan =>
-        plan.id === planId
-          ? { ...plan, selectedOfferings: { ...plan.selectedOfferings, [courseId]: offeringId } }
-          : plan
-      ),
-    }));
+    setProfile(prev => {
+      const currentP = prev.progress[prev.major];
+      const newP = {
+        ...currentP,
+        semesterPlans: currentP.semesterPlans.map(plan =>
+          plan.id === planId
+            ? { ...plan, selectedOfferings: { ...plan.selectedOfferings, [courseId]: offeringId } }
+            : plan
+        ),
+      };
+      return {
+        ...prev,
+        progress: { ...prev.progress, [prev.major]: newP }
+      };
+    });
   }, []);
 
   const getOfferingsForCourse = useCallback((courseId: string, semester?: string): OfflineOffering[] => {
     return offerings.filter(o => o.courseId === courseId && (!semester || o.semester === semester));
   }, [offerings]);
 
+  /** Compute cumulative GPA: sum(gradePoint × credits) / sum(credits) */
   const calculateGPA = useCallback((): number => {
-    if (profile.grades.length === 0) return 0;
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress || currentProgress.grades.length === 0) return 0;
+
     let totalPoints = 0;
     let totalCredits = 0;
-    for (const g of profile.grades) {
+    for (const g of currentProgress.grades) {
       const course = courseMap.get(g.courseId);
       if (!course) continue;
       const gradePoint = GRADE_POINTS[g.grade] ?? 0;
@@ -329,10 +504,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
       totalCredits += course.credits;
     }
     return totalCredits > 0 ? totalPoints / totalCredits : 0;
-  }, [profile.grades, courseMap]);
+  }, [profile, courseMap]);
 
   const calculateSemesterGPA = useCallback((courseIds: string[]): number => {
-    const semesterGrades = profile.grades.filter(g => courseIds.includes(g.courseId));
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return 0;
+
+    const semesterGrades = currentProgress.grades.filter(g => courseIds.includes(g.courseId));
     if (semesterGrades.length === 0) return 0;
     let totalPoints = 0;
     let totalCredits = 0;
@@ -344,23 +522,29 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
       totalCredits += course.credits;
     }
     return totalCredits > 0 ? totalPoints / totalCredits : 0;
-  }, [profile.grades, courseMap]);
+  }, [profile, courseMap]);
 
   const totalCredits = useMemo(() => courses.reduce((sum, c) => sum + c.credits, 0), [courses]);
 
   const completedCredits = useMemo(() => {
-    return profile.completedCourses.reduce((sum, cid) => {
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return 0;
+
+    return currentProgress.completedCourses.reduce((sum, cid) => {
       const course = courseMap.get(cid);
       return sum + (course?.credits ?? 0);
     }, 0);
-  }, [profile.completedCourses, courseMap]);
+  }, [profile, courseMap]);
 
   const inProgressCredits = useMemo(() => {
-    return profile.inProgressCourses.reduce((sum, cid) => {
+    const currentProgress = profile.progress[profile.major];
+    if (!currentProgress) return 0;
+
+    return currentProgress.inProgressCourses.reduce((sum, cid) => {
       const course = courseMap.get(cid);
       return sum + (course?.credits ?? 0);
     }, 0);
-  }, [profile.inProgressCourses, courseMap]);
+  }, [profile, courseMap]);
 
   const setCourseNote = useCallback((courseId: string, note: string) => {
     setProfile(prev => ({
@@ -376,10 +560,17 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     return profile.notes?.find(n => n.courseId === courseId)?.note ?? '';
   }, [profile.notes]);
 
+  /**
+   * Build the full prerequisite chain for a course using BFS.
+   * Returns an array of levels — level 0 is the furthest-back prerequisites,
+   * and the last level is the direct prerequisites of the target course.
+   * Only includes courses the student has NOT yet completed.
+   */
   const getPrerequisiteChain = useCallback((courseId: string): CourseWithPrereqs[][] => {
     const chain: CourseWithPrereqs[][] = [];
     let currentLevel = [courseId];
     const visited = new Set<string>();
+    const currentProgress = profile.progress[profile.major];
 
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
@@ -391,7 +582,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !profile.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
             if (!visited.has(pid)) {
@@ -411,20 +602,32 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
       currentLevel = nextLevel;
     }
 
+    // Reverse so that the earliest prerequisites appear first
     return chain.reverse();
-  }, [courseMap, profile.completedCourses]);
+  }, [courseMap, profile]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
     AsyncStorage.removeItem(STORAGE_KEY);
   }, []);
 
+  const setMajor = useCallback((major: string) => {
+    setProfile(prev => {
+      // Ensure the new major has initialized progress structure if it doesn't exist
+      const updatedProgress = { ...prev.progress };
+      if (!updatedProgress[major]) {
+        updatedProgress[major] = { ...DEFAULT_MAJOR_PROGRESS };
+      }
+      return { ...prev, major, progress: updatedProgress };
+    });
+  }, []);
+
   const value = useMemo(() => ({
     profile,
     courses,
     offerings,
-    isLoading: coursesLoading || !loaded,
-    isOnline,
+    isLoading: !loaded,
+    isOnline: hasServerConnection,
     getCourseStatus,
     getPrerequisitesFor,
     getUnlockedBy,
@@ -451,16 +654,19 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     completedCredits,
     inProgressCredits,
     resetProfile,
+    setMajor,
+    grades: profile.progress[profile.major]?.grades ?? [],
+    semesterPlans: profile.progress[profile.major]?.semesterPlans ?? [],
+    completedCourses: profile.progress[profile.major]?.completedCourses ?? [],
+    inProgressCourses: profile.progress[profile.major]?.inProgressCourses ?? [],
   }), [
-    profile, courses, offerings, coursesLoading, loaded, isOnline,
+    profile, courses, offerings, loaded, serverUrl, serverLoading, hasServerConnection,
     getCourseStatus, getPrerequisitesFor, getUnlockedBy, arePrereqsMet, getMissingPrereqs,
     toggleCourseCompleted, toggleCourseInProgress, toggleYearCompleted, isYearCompleted,
-    setGrade, removeGrade,
-    addSemesterPlan, removeSemesterPlan, addCourseToSemester, removeCourseFromSemester,
-    setSelectedOffering, getOfferingsForCourse,
-    setCourseNote, getCourseNote, getPrerequisiteChain,
-    calculateGPA, calculateSemesterGPA,
-    totalCredits, completedCredits, inProgressCredits, resetProfile,
+    setGrade, removeGrade, addSemesterPlan, removeSemesterPlan, addCourseToSemester,
+    removeCourseFromSemester, setSelectedOffering, getOfferingsForCourse,
+    setCourseNote, getCourseNote, getPrerequisiteChain, calculateGPA, calculateSemesterGPA,
+    totalCredits, completedCredits, inProgressCredits, resetProfile, setMajor
   ]);
 
   return (

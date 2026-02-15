@@ -7,6 +7,7 @@ import { useTheme } from '@/lib/theme-context';
 
 export type TermKey = 'Prerequisites' | 'Corequisites' | 'Unlocks' | 'Credits' | 'GPA' | 'Cumulative GPA' | 'Semester GPA';
 
+// Definitions for academic terms used throughout the app
 const DEFINITIONS: Record<TermKey, string> = {
     'Prerequisites': 'Courses you must complete BEFORE you can take this course.',
     'Corequisites': 'Courses you must take AT THE SAME TIME as this course (or have already completed).',
@@ -32,6 +33,7 @@ export function TermInfo({ term, size = 16, color, style }: TermInfoProps) {
         Alert.alert(term, DEFINITIONS[term]);
     };
 
+    // Display an alert with the term's definition on press
     return (
         <Pressable onPress={handlePress} style={[styles.container, style]} hitSlop={8}>
             <Ionicons name="information-circle-outline" size={size} color={resolvedColor} />

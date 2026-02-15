@@ -18,15 +18,20 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AcademicProvider } from "@/lib/academic-context";
 import Colors from "@/constants/colors";
+import { ConfirmProvider } from "@/lib/confirm-context";
 
 SplashScreen.preventAutoHideAsync();
 
+import { usePushNotifications } from "@/lib/usePushNotifications";
+
 function ThemedRoot() {
   const { colors, isDark } = useTheme();
+  usePushNotifications();
 
   return (
     <>
       <StatusBar style={isDark ? "light" : "dark"} />
+      {/* Provide Navigation Theme based on our custom theme context */}
       <NavThemeProvider value={{
         ...isDark ? DarkTheme : DefaultTheme,
         colors: {
@@ -73,14 +78,18 @@ export default function RootLayout() {
   }
 
   return (
+    // Wrap app in ErrorBoundary to catch crashes and show fallback
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView>
           <KeyboardProvider>
+            {/* Theme and Academic providers manage global app state */}
             <ThemeProvider>
-              <AcademicProvider>
-                <ThemedRoot />
-              </AcademicProvider>
+              <ConfirmProvider>
+                <AcademicProvider>
+                  <ThemedRoot />
+                </AcademicProvider>
+              </ConfirmProvider>
             </ThemeProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>

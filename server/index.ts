@@ -16,26 +16,16 @@ declare module "http" {
 
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
-    const origins = new Set<string>();
-
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
-
     const origin = req.header("origin");
 
-    // Allow localhost origins for Expo web development (any port)
-    const isLocalhost =
+    // Only allow localhost origins in development to prevent CORS abuse in production
+    const isDev = process.env.NODE_ENV === "development";
+    const isLocalhost = isDev && (
       origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
+      origin?.startsWith("http://127.0.0.1:")
+    );
 
-    if (origin && (origins.has(origin) || isLocalhost)) {
+    if (origin && isLocalhost) {
       res.header("Access-Control-Allow-Origin", origin);
       res.header(
         "Access-Control-Allow-Methods",
@@ -142,6 +132,7 @@ function serveLandingPage({
   landingPageTemplate: string;
   appName: string;
 }) {
+  // Determine base URL for dynamic link generation
   const forwardedProto = req.header("x-forwarded-proto");
   const protocol = forwardedProto || req.protocol || "https";
   const forwardedHost = req.header("x-forwarded-host");
@@ -185,6 +176,7 @@ function configureExpoAndLanding(app: express.Application) {
       res.sendFile(path.join(distPath, "index.html"));
     });
   } else {
+    // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
     const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
     const appName = getAppName();
@@ -240,7 +232,9 @@ function setupErrorHandler(app: express.Application) {
     };
 
     const status = error.status || error.statusCode || 500;
-    const message = error.message || "Internal Server Error";
+    const message = process.env.NODE_ENV === "development"
+      ? (error.message || "Internal Server Error")
+      : "Internal Server Error";
 
     console.error("Internal Server Error:", err);
 
@@ -268,7 +262,6 @@ function setupErrorHandler(app: express.Application) {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
     },
     () => {
       log(`express server serving on port ${port}`);

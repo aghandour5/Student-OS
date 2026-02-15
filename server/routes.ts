@@ -15,9 +15,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get specific course details including offerings and relational data
   app.get("/api/courses/:id", async (req, res) => {
     try {
-      const course = await storage.getCourse(req.params.id);
+      // Validate route parameter to prevent injection
+      const id = req.params.id;
+      if (!id || id.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+        return res.status(400).json({ message: "Invalid course ID" });
+      }
+      const course = await storage.getCourse(id);
       if (!course) {
         return res.status(404).json({ message: "Course not found" });
       }
