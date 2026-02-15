@@ -34,7 +34,21 @@ export function StatCard({ icon, iconColor = Colors.primary, label, value, subti
 
   if (onPress) {
     return (
-      <Pressable style={[styles.card, small && styles.smallCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPress}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.card,
+          small && styles.smallCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.cardBorder,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${value} ${label}`}
+        accessibilityHint={`Tap to filter by ${label}`}
+      >
         {content}
       </Pressable>
     );
