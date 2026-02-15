@@ -37,6 +37,9 @@ try {
                         }),
                         get: () => Promise.resolve({ empty: true, docs: [] }),
                     }),
+                    limit: () => ({
+                        get: () => Promise.resolve({ empty: true, docs: [] }),
+                    }),
                     get: () => Promise.resolve({ docs: [] }),
                 }),
                 batch: () => ({
@@ -60,6 +63,9 @@ try {
                     limit: () => ({
                         get: () => Promise.resolve({ empty: true, docs: [] }),
                     }),
+                    get: () => Promise.resolve({ empty: true, docs: [] }),
+                }),
+                limit: () => ({
                     get: () => Promise.resolve({ empty: true, docs: [] }),
                 }),
                 get: () => Promise.resolve({ docs: [] }),

@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { rateLimit } from "./ratelimit";
+import helmet from "helmet";
 
 const app = express();
 const log = console.log;
@@ -16,12 +17,28 @@ declare module "http" {
 }
 
 function setupSecurityHeaders(app: express.Application) {
-  app.use((_req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("X-XSS-Protection", "1; mode=block");
-    next();
-  });
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "https://unpkg.com",
+            "http://localhost:8081",
+          ],
+          connectSrc: [
+            "'self'",
+            "http://localhost:8081",
+            "ws://localhost:8081",
+          ],
+          styleSrc: ["'self'", "'unsafe-inline'", "http://localhost:8081"],
+          imgSrc: ["'self'", "data:", "blob:", "http://localhost:8081"],
+        },
+      },
+    }),
+  );
 }
 
 function setupCors(app: express.Application) {
@@ -190,7 +207,6 @@ function configureExpoAndLanding(app: express.Application) {
       "landing-page.html",
     );
     // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
-    const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
     const appName = getAppName();
     const isDev = process.env.NODE_ENV === "development";
