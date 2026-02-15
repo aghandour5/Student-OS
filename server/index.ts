@@ -14,15 +14,6 @@ declare module "http" {
   }
 }
 
-function setupSecurityHeaders(app: express.Application) {
-  app.use((_req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("X-XSS-Protection", "1; mode=block");
-    next();
-  });
-}
-
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
     const origin = req.header("origin");
@@ -68,12 +59,23 @@ function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
+    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
+
+    const originalResJson = res.json;
+    res.json = function (bodyJson, ...args) {
+      capturedJsonResponse = bodyJson;
+      return originalResJson.apply(res, [bodyJson, ...args]);
+    };
 
     res.on("finish", () => {
       if (!path.startsWith("/api")) return;
 
       const duration = Date.now() - start;
+
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
 
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";
@@ -132,27 +134,19 @@ function serveLandingPage({
 }) {
   // Determine base URL for dynamic link generation
   const forwardedProto = req.header("x-forwarded-proto");
-  const protocol = (forwardedProto || req.protocol || "https").replace(/[^a-z]/g, "");
+  const protocol = forwardedProto || req.protocol || "https";
   const forwardedHost = req.header("x-forwarded-host");
-  const host = (forwardedHost || req.get("host") || "").split(',')[0].trim();
-
-  // Validate host and protocol to prevent XSS/Host header injection
-  if (!/^[a-zA-Z0-9.-]+(:\d+)?$/.test(host) || (protocol !== "http" && protocol !== "https")) {
-    return res.status(400).send("Invalid Host or Protocol");
-  }
-
+  const host = forwardedHost || req.get("host");
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
 
-  // Simple HTML escape for the placeholders to prevent XSS
-  const escapeHtml = (str: string) => str.replace(/[&<>"']/g, (m) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[m] || m));
+  log(`baseUrl`, baseUrl);
+  log(`expsUrl`, expsUrl);
 
   const html = landingPageTemplate
-    .replace(/BASE_URL_PLACEHOLDER/g, escapeHtml(baseUrl))
-    .replace(/EXPS_URL_PLACEHOLDER/g, escapeHtml(expsUrl))
-    .replace(/APP_NAME_PLACEHOLDER/g, escapeHtml(appName));
+    .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
+    .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
+    .replace(/APP_NAME_PLACEHOLDER/g, appName);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
@@ -253,7 +247,6 @@ function setupErrorHandler(app: express.Application) {
 }
 
 (async () => {
-  setupSecurityHeaders(app);
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
