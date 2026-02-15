@@ -35,13 +35,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated
-      router.replace('/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to tabs if already authenticated
+    // Force redirect to tabs during development (pause auth)
+    if (segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password') {
       router.replace('/(tabs)');
     }
+
+    // if (!isAuthenticated && !inAuthGroup) {
+    //   // Redirect to login if not authenticated
+    //   // router.replace('/login');
+    // } else if (isAuthenticated && inAuthGroup) {
+    //   // Redirect to tabs if already authenticated
+    //   router.replace('/(tabs)');
+    // }
   }, [isAuthenticated, isLoading, segments]);
 
   return <>{children}</>;
