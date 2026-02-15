@@ -217,7 +217,7 @@ export default function MapScreen() {
     };
   }, []);
 
-  useEffect(() => {
+  const handleSearchSubmit = useCallback(() => {
     if (mapSearch.trim().length > 0) {
       const query = mapSearch.toLowerCase();
       const match = courses.find(c =>
@@ -226,11 +226,15 @@ export default function MapScreen() {
       );
       if (match) {
         handleHighlight(match.id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        handleHighlight(null);
       }
     } else {
       handleHighlight(null);
     }
-  }, [mapSearch, courses]);
+  }, [mapSearch, courses, handleHighlight]);
 
   const resetZoom = useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 150 });
@@ -274,6 +278,7 @@ export default function MapScreen() {
       currentY += NODE_HEIGHT + YEAR_GAP / 2;
     }
 
+    // Calculate fixed positions for all nodes based on Year/Semester structure
     return {
       positions: posMap,
       svgWidth: Math.max(maxX + LEFT_MARGIN, Dimensions.get('window').width),
@@ -303,6 +308,7 @@ export default function MapScreen() {
     .onUpdate((e) => {
       const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, lastScale.value * e.scale));
       const scaleDiff = newScale / lastScale.value;
+      // Adjust translation to zoom towards the focal point
       translateX.value = focalX.value - scaleDiff * (focalX.value - lastTranslateX.value);
       translateY.value = focalY.value - scaleDiff * (focalY.value - lastTranslateY.value);
       scale.value = newScale;
@@ -552,9 +558,14 @@ export default function MapScreen() {
           value={mapSearch}
           onChangeText={setMapSearch}
           returnKeyType="search"
+          onSubmitEditing={handleSearchSubmit}
         />
         {mapSearch.length > 0 && (
-          <Pressable onPress={() => setMapSearch('')}>
+          <Pressable onPress={() => {
+            setMapSearch('');
+            handleHighlight(null);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }}>
             <Ionicons name="close-circle" size={18} color={colors.textMuted} />
           </Pressable>
         )}
@@ -1024,6 +1035,7 @@ export default function MapScreen() {
 
           const prereqCount = tooltipData.course.prerequisites.length;
           const unlocksCount = tooltipData.course.unlocks.length;
+          const coreqCount = tooltipData.course.corequisites?.length || 0;
           const color = statusColors[tooltipData.status];
 
           return (
@@ -1068,6 +1080,12 @@ export default function MapScreen() {
                   <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Prerequisites</Text>
                   <Text style={[styles.tooltipValue, { color: colors.textSecondary }]}>{prereqCount}</Text>
                 </View>
+                {coreqCount > 0 && (
+                  <View style={styles.tooltipRow}>
+                    <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Corequisites</Text>
+                    <Text style={[styles.tooltipValue, { color: '#F59E0B' }]}>{coreqCount}</Text>
+                  </View>
+                )}
                 <View style={styles.tooltipRow}>
                   <Text style={[styles.tooltipLabel, { color: colors.textMuted }]}>Unlocks</Text>
                   <Text style={[styles.tooltipValue, { color: colors.textSecondary }]}>{unlocksCount}</Text>

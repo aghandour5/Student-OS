@@ -15,28 +15,27 @@ declare module "http" {
   }
 }
 
+function setupSecurityHeaders(app: express.Application) {
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    next();
+  });
+}
+
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
-    const origins = new Set<string>();
-
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
-
     const origin = req.header("origin");
 
-    // Allow localhost origins for Expo web development (any port)
-    const isLocalhost =
+    // Only allow localhost origins in development to prevent CORS abuse in production
+    const isDev = process.env.NODE_ENV === "development";
+    const isLocalhost = isDev && (
       origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
+      origin?.startsWith("http://127.0.0.1:")
+    );
 
-    if (origin && (origins.has(origin) || isLocalhost)) {
+    if (origin && isLocalhost) {
       res.header("Access-Control-Allow-Origin", origin);
       res.header(
         "Access-Control-Allow-Methods",
@@ -70,23 +69,12 @@ function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
-
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
 
     res.on("finish", () => {
       if (!path.startsWith("/api")) return;
 
       const duration = Date.now() - start;
-
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
 
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";
@@ -143,20 +131,29 @@ function serveLandingPage({
   landingPageTemplate: string;
   appName: string;
 }) {
+  // Determine base URL for dynamic link generation
   const forwardedProto = req.header("x-forwarded-proto");
-  const protocol = forwardedProto || req.protocol || "https";
+  const protocol = (forwardedProto || req.protocol || "https").replace(/[^a-z]/g, "");
   const forwardedHost = req.header("x-forwarded-host");
-  const host = forwardedHost || req.get("host");
+  const host = (forwardedHost || req.get("host") || "").split(',')[0].trim();
+
+  // Validate host and protocol to prevent XSS/Host header injection
+  if (!/^[a-zA-Z0-9.-]+(:\d+)?$/.test(host) || (protocol !== "http" && protocol !== "https")) {
+    return res.status(400).send("Invalid Host or Protocol");
+  }
+
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
 
-  log(`baseUrl`, baseUrl);
-  log(`expsUrl`, expsUrl);
+  // Simple HTML escape for the placeholders to prevent XSS
+  const escapeHtml = (str: string) => str.replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m] || m));
 
   const html = landingPageTemplate
-    .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
-    .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName);
+    .replace(/BASE_URL_PLACEHOLDER/g, escapeHtml(baseUrl))
+    .replace(/EXPS_URL_PLACEHOLDER/g, escapeHtml(expsUrl))
+    .replace(/APP_NAME_PLACEHOLDER/g, escapeHtml(appName));
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
@@ -192,6 +189,8 @@ function configureExpoAndLanding(app: express.Application) {
       "templates",
       "landing-page.html",
     );
+    // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
+    const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
     const appName = getAppName();
     const isDev = process.env.NODE_ENV === "development";
@@ -246,7 +245,9 @@ function setupErrorHandler(app: express.Application) {
     };
 
     const status = error.status || error.statusCode || 500;
-    const message = error.message || "Internal Server Error";
+    const message = process.env.NODE_ENV === "development"
+      ? (error.message || "Internal Server Error")
+      : "Internal Server Error";
 
     console.error("Internal Server Error:", err);
 
@@ -260,6 +261,7 @@ function setupErrorHandler(app: express.Application) {
 
 (async () => {
   app.set("trust proxy", 1);
+  setupSecurityHeaders(app);
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
@@ -286,7 +288,6 @@ function setupErrorHandler(app: express.Application) {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
     },
     () => {
       log(`express server serving on port ${port}`);

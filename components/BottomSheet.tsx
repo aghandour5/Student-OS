@@ -1,3 +1,12 @@
+/**
+ * BottomSheet — Modal panel that slides up from the bottom of the screen.
+ *
+ * Features:
+ * - Drag-to-dismiss via `useBottomSheetDrag` (pan gesture on the handle bar)
+ * - Keyboard-aware: shifts content up when the soft keyboard opens
+ * - Reanimated entrance/exit animations (SlideInDown / SlideOutDown)
+ * - Tap-on-backdrop to dismiss
+ */
 import React, { useEffect, useState } from 'react';
 import {
     StyleSheet,
