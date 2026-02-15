@@ -16,9 +16,9 @@ import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
 import type { CourseWithPrereqs } from '@shared/schema';
 
-// Component imports for detailed term definitions and footer
 import { TermInfo } from '@/components/TermInfo';
 import { AppFooter } from '@/components/AppFooter';
+import { BottomSheet } from '@/components/BottomSheet';
 
 
 
@@ -103,32 +103,32 @@ export default function DashboardScreen() {
   } = useAcademic();
   const { confirm } = useConfirm();
 
-  // Human-readable major label
-  const majorLabel = profile.major === 'EENG' ? 'Electrical Engineering' : 'Computer Engineering';
-
-  // Switch major with a simple alert
-  const handleSwitchMajor = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const otherMajor = profile.major === 'CENG' ? 'EENG' : 'CENG';
-    const otherLabel = otherMajor === 'EENG' ? 'Electrical Engineering' : 'Computer Engineering';
-
-    if (await confirm({
-      title: 'Switch Major',
-      message: `Switch to ${otherLabel}?\n\nYour progress will be preserved.`,
-      confirmText: 'Switch',
-      variant: 'info',
-    })) {
-      setMajor(otherMajor);
-    }
-  }, [profile.major, setMajor, confirm]);
-
-  const { isDark, toggleTheme, colors } = useTheme();
-
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All');
   const [dismissedTips, setDismissedTips] = useState<number[]>([]);
+  const [majorSheetVisible, setMajorSheetVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
+
+  // Human-readable major label
+  const majorLabel = profile.major === 'EENG' ? 'Electrical Engineering' :
+    profile.major === 'MENG' ? 'Mechanical Engineering' :
+      'Computer Engineering';
+
+  // Open major selection sheet
+  const handleSwitchMajor = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMajorSheetVisible(true);
+  }, []);
+
+  const handleSelectMajor = useCallback((major: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setMajor(major);
+    setMajorSheetVisible(false);
+  }, [setMajor]);
+
+  const { isDark, toggleTheme, colors } = useTheme();
+
 
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
   const gpa = calculateGPA();
@@ -591,6 +591,55 @@ export default function DashboardScreen() {
 
         <AppFooter />
       </ScrollView >
+
+      <BottomSheet
+        visible={majorSheetVisible}
+        onClose={() => setMajorSheetVisible(false)}
+        title="Select Major"
+        subtitle="Your progress is saved for each major separately."
+      >
+        <View style={{ paddingBottom: 20 }}>
+          {[
+            { id: 'CENG', label: 'Computer Engineering', code: 'CENG' },
+            { id: 'EENG', label: 'Electrical Engineering', code: 'EENG' },
+            { id: 'MENG', label: 'Mechanical Engineering', code: 'MENG' },
+          ].map((item) => {
+            const isActive = profile.major === item.id;
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => handleSelectMajor(item.id)}
+                style={({ pressed }) => [
+                  styles.majorItem,
+                  { borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+                <View style={[
+                  styles.majorIcon,
+                  { backgroundColor: isActive ? colors.primary + '20' : colors.cardBorder + '50' }
+                ]}>
+                  <MaterialCommunityIcons
+                    name={item.id === 'CENG' ? 'laptop' : item.id === 'EENG' ? 'lightning-bolt' : 'cog'}
+                    size={24}
+                    color={isActive ? colors.primary : colors.textMuted}
+                  />
+                </View>
+                <View style={styles.majorItemContent}>
+                  <Text style={[styles.majorTitle, { color: colors.text, fontWeight: isActive ? '700' : '500' }]}>
+                    {item.label}
+                  </Text>
+                  <Text style={[styles.majorSubtitle, { color: colors.textSecondary }]}>
+                    Bachelor of Science
+                  </Text>
+                </View>
+                {isActive && (
+                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
     </View >
   );
 }
@@ -1070,9 +1119,33 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   gradProgressText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     textAlign: 'center' as const,
+  },
+  majorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    gap: 16,
+  },
+  majorIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  majorItemContent: {
+    flex: 1,
+    gap: 2,
+  },
+  majorTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  majorSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
   },
 });
