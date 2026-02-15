@@ -38,6 +38,9 @@ yarn-error.*
 *.tsbuildinfo
 .vercel
 
+# Replit/Local
+.local/
+
 # Firebase
 service-account.json
 
