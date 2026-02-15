@@ -18,6 +18,14 @@ import {
 import { offlineCourses, offlineOfferings, type OfflineOffering } from './offline-data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
+import {
+  arePrereqsMet as arePrereqsMetUtil,
+  getCourseStatus as getCourseStatusUtil,
+  getMissingPrereqs as getMissingPrereqsUtil,
+  isYearCompleted as isYearCompletedUtil,
+  getPrerequisiteChain as getPrerequisiteChainUtil,
+  type CourseStatus
+} from './academic-utils';
 
 // AsyncStorage key for persisted student profile
 const STORAGE_KEY = '@uniflow_user_profile';
@@ -40,9 +48,6 @@ const DEFAULT_PROFILE: UserProfile = {
   },
   notes: [],
 };
-
-/** Course lifecycle states — determines visual treatment and interaction availability */
-type CourseStatus = 'completed' | 'in_progress' | 'available' | 'locked' | 'future';
 
 interface AcademicContextValue {
   profile: UserProfile;
@@ -237,26 +242,28 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     return map;
   }, [courses]);
 
+  // Performance Optimization: Use Sets for O(1) lookups
+  const completedCoursesSet = useMemo(() => {
+    const currentProgress = profile.progress[profile.major];
+    return new Set(currentProgress?.completedCourses || []);
+  }, [profile.progress, profile.major]);
+
+  const inProgressCoursesSet = useMemo(() => {
+    const currentProgress = profile.progress[profile.major];
+    return new Set(currentProgress?.inProgressCourses || []);
+  }, [profile.progress, profile.major]);
+
   /** Check if all prerequisite courses are in the student's completedCourses list */
   const arePrereqsMet = useCallback((courseId: string): boolean => {
     const course = courseMap.get(courseId);
     if (!course) return false;
-    if (course.prerequisites.length === 0) return true;
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return false;
-    return course.prerequisites.every(pid => currentProgress.completedCourses.includes(pid));
-  }, [courseMap, profile]);
+    return arePrereqsMetUtil(course, completedCoursesSet);
+  }, [courseMap, completedCoursesSet]);
 
   /** Resolve course status with priority: completed > in_progress > available > locked */
   const getCourseStatus = useCallback((courseId: string): CourseStatus => {
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return 'locked';
-
-    if (currentProgress.completedCourses.includes(courseId)) return 'completed';
-    if (currentProgress.inProgressCourses.includes(courseId)) return 'in_progress';
-    if (arePrereqsMet(courseId)) return 'available';
-    return 'locked';
-  }, [profile, arePrereqsMet]);
+    return getCourseStatusUtil(courseId, completedCoursesSet, inProgressCoursesSet, courseMap);
+  }, [completedCoursesSet, inProgressCoursesSet, courseMap]);
 
   const getPrerequisitesFor = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
@@ -273,13 +280,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const getMissingPrereqs = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
     if (!course) return [];
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return course.prerequisites.map(pid => courseMap.get(pid)).filter(Boolean) as CourseWithPrereqs[];
-    return course.prerequisites
-      .filter(pid => !currentProgress.completedCourses.includes(pid))
-      .map(pid => courseMap.get(pid))
-      .filter(Boolean) as CourseWithPrereqs[];
-  }, [courseMap, profile]);
+    return getMissingPrereqsUtil(course, completedCoursesSet, courseMap);
+  }, [courseMap, completedCoursesSet]);
 
   /** Toggle a course between completed and not-completed.
    *  Completing also removes from inProgress; un-completing also removes its grade. */
@@ -337,12 +339,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isYearCompleted = useCallback((year: number): boolean => {
-    const yearCourses = courses.filter(c => c.year === year);
-    if (yearCourses.length === 0) return false;
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return false;
-    return yearCourses.every(c => currentProgress.completedCourses.includes(String(c.id)));
-  }, [courses, profile]);
+    return isYearCompletedUtil(year, courses, completedCoursesSet);
+  }, [courses, completedCoursesSet]);
 
   const toggleYearCompleted = useCallback((year: number) => {
     setProfile(prev => {
@@ -589,44 +587,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
    * Only includes courses the student has NOT yet completed.
    */
   const getPrerequisiteChain = useCallback((courseId: string): CourseWithPrereqs[][] => {
-    const chain: CourseWithPrereqs[][] = [];
-    let currentLevel = [courseId];
-    const visited = new Set<string>();
-    const currentProgress = profile.progress[profile.major];
-
-    while (currentLevel.length > 0) {
-      const nextLevel: string[] = [];
-      const levelCourses: CourseWithPrereqs[] = [];
-
-      for (const id of currentLevel) {
-        if (visited.has(id)) continue;
-        visited.add(id);
-        const course = courseMap.get(id);
-        if (!course) continue;
-
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
-        if (missingPrereqs.length > 0) {
-          for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
-              const prereqCourse = courseMap.get(pid);
-              if (prereqCourse) {
-                levelCourses.push(prereqCourse);
-                nextLevel.push(pid);
-              }
-            }
-          }
-        }
-      }
-
-      if (levelCourses.length > 0) {
-        chain.push(levelCourses);
-      }
-      currentLevel = nextLevel;
-    }
-
-    // Reverse so that the earliest prerequisites appear first
-    return chain.reverse();
-  }, [courseMap, profile]);
+    return getPrerequisiteChainUtil(courseId, courseMap, completedCoursesSet);
+  }, [courseMap, completedCoursesSet]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
@@ -705,4 +667,3 @@ export function useAcademic() {
   }
   return context;
 }
-
