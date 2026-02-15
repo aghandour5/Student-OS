@@ -59,6 +59,23 @@ interface AcademicContextValue {
 
 const AcademicContext = createContext<AcademicContextValue | null>(null);
 
+function calculateGPAFromGrades(
+  grades: UserGrade[],
+  courseMap: Map<string, CourseWithPrereqs>
+): number {
+  if (grades.length === 0) return 0;
+  let totalPoints = 0;
+  let totalCredits = 0;
+  for (const g of grades) {
+    const course = courseMap.get(g.courseId);
+    if (!course) continue;
+    const gradePoint = GRADE_POINTS[g.grade] ?? 0;
+    totalPoints += gradePoint * course.credits;
+    totalCredits += course.credits;
+  }
+  return totalCredits > 0 ? totalPoints / totalCredits : 0;
+}
+
 export function AcademicProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [loaded, setLoaded] = useState(false);
@@ -318,32 +335,12 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   }, [offerings]);
 
   const calculateGPA = useCallback((): number => {
-    if (profile.grades.length === 0) return 0;
-    let totalPoints = 0;
-    let totalCredits = 0;
-    for (const g of profile.grades) {
-      const course = courseMap.get(g.courseId);
-      if (!course) continue;
-      const gradePoint = GRADE_POINTS[g.grade] ?? 0;
-      totalPoints += gradePoint * course.credits;
-      totalCredits += course.credits;
-    }
-    return totalCredits > 0 ? totalPoints / totalCredits : 0;
+    return calculateGPAFromGrades(profile.grades, courseMap);
   }, [profile.grades, courseMap]);
 
   const calculateSemesterGPA = useCallback((courseIds: string[]): number => {
     const semesterGrades = profile.grades.filter(g => courseIds.includes(g.courseId));
-    if (semesterGrades.length === 0) return 0;
-    let totalPoints = 0;
-    let totalCredits = 0;
-    for (const g of semesterGrades) {
-      const course = courseMap.get(g.courseId);
-      if (!course) continue;
-      const gradePoint = GRADE_POINTS[g.grade] ?? 0;
-      totalPoints += gradePoint * course.credits;
-      totalCredits += course.credits;
-    }
-    return totalCredits > 0 ? totalPoints / totalCredits : 0;
+    return calculateGPAFromGrades(semesterGrades, courseMap);
   }, [profile.grades, courseMap]);
 
   const totalCredits = useMemo(() => courses.reduce((sum, c) => sum + c.credits, 0), [courses]);
