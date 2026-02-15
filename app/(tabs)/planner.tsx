@@ -351,6 +351,9 @@ export default function PlannerScreen() {
                 }
               }}
               style={[styles.shareBtn, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}
+              accessibilityRole="button"
+              accessibilityLabel="Share plan"
+              accessibilityHint="Shares a text summary of your semester plan"
             >
               <Ionicons name="share-outline" size={20} color={colors.text} />
             </Pressable>
@@ -361,6 +364,9 @@ export default function PlannerScreen() {
               setShowNewSemester(true);
             }}
             style={styles.addBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Add new semester"
+            accessibilityHint="Create a new semester plan"
           >
             <Ionicons name="add" size={24} color={Colors.white} />
           </Pressable>
@@ -421,6 +427,10 @@ export default function PlannerScreen() {
                   setExpandedSemester(isExpanded ? null : plan.id);
                 }}
                 style={styles.semesterHeader}
+                accessibilityRole="button"
+                accessibilityLabel={`${plan.name}, ${plan.courseIds.length} courses, ${credits} credits`}
+                accessibilityHint={isExpanded ? "Double tap to collapse" : "Double tap to expand"}
+                accessibilityState={{ expanded: isExpanded }}
               >
                 <View style={styles.semesterInfo}>
                   <View style={[styles.seasonBadge, {
@@ -606,6 +616,9 @@ export default function PlannerScreen() {
                             removeCourseFromSemester(plan.id, courseId);
                           }}
                           style={{ paddingLeft: 8, alignSelf: 'flex-start', paddingTop: 4 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${course.code}`}
+                          accessibilityHint="Removes this course from the semester"
                         >
                           <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                         </Pressable>
@@ -620,12 +633,18 @@ export default function PlannerScreen() {
                         setShowAddCourse(plan.id);
                       }}
                       style={styles.addCourseBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add course"
+                      accessibilityHint={`Adds a course to ${plan.name}`}
                     >
                       <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
                       <Text style={styles.addCourseText}>Add Course</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => handleRemoveSemester(plan.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${plan.name} semester`}
+                      accessibilityHint="Deletes this semester plan"
                     >
                       <Ionicons name="trash-outline" size={18} color={Colors.danger} />
                     </Pressable>
