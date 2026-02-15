@@ -1,3 +1,10 @@
+/**
+ * Design system color tokens.
+ *
+ * The default export (`Colors`) is the dark theme palette.
+ * `LightColors` overrides the surface/text colors for light mode.
+ * Both palettes share accent, status, and category colors.
+ */
 const Colors = {
   primary: '#0EA5E9',
   primaryDark: '#0284C7',
@@ -32,6 +39,7 @@ const Colors = {
   gpaAverage: '#F59E0B',
   gpaLow: '#EF4444',
 
+  // Per-category accent colors used in course cards, map nodes, and charts
   categoryColors: {
     'Foundation': '#8B5CF6',
     'Mathematics': '#3B82F6',
@@ -39,6 +47,7 @@ const Colors = {
     'Computer Engineering': '#0EA5E9',
     'Computer Science': '#14B8A6',
     'Electrical Engineering': '#F97316',
+    'Mechanical Engineering': '#F43F5E',
     'Engineering Core': '#10B981',
     'General Education': '#6366F1',
     'Elective': '#A855F7',
@@ -58,6 +67,7 @@ const Colors = {
   },
 };
 
+/** Light theme overrides — only surface and text colors change */
 export const LightColors = {
   ...Colors,
   background: '#F8FAFC',

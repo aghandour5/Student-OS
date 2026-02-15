@@ -1,3 +1,11 @@
+/**
+ * ProgressRing — SVG circular progress indicator.
+ *
+ * Renders two concentric circles: a background track and a foreground arc
+ * whose length is proportional to `progress` (0–1). The arc starts at
+ * the 12-o'clock position (rotation="-90") and uses a round linecap.
+ * Optional centered label/sublabel text is overlaid.
+ */
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';

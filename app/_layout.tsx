@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, router, useSegments } from "expo-router";
 import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from "@react-navigation/native";
 import { ThemeProvider, useTheme } from "@/lib/theme-context";
 import * as SplashScreen from "expo-splash-screen";
@@ -17,16 +17,44 @@ import {
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AcademicProvider } from "@/lib/academic-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
+import { ConfirmProvider } from "@/lib/confirm-context";
 
 SplashScreen.preventAutoHideAsync();
 
+// import { usePushNotifications } from "@/lib/usePushNotifications";
+
+/** Redirect unauthenticated users to login */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Redirect to login if not authenticated
+      router.replace('/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Redirect to tabs if already authenticated
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, segments]);
+
+  return <>{children}</>;
+}
+
 function ThemedRoot() {
   const { colors, isDark } = useTheme();
+  // usePushNotifications();
 
   return (
     <>
       <StatusBar style={isDark ? "light" : "dark"} />
+      {/* Provide Navigation Theme based on our custom theme context */}
       <NavThemeProvider value={{
         ...isDark ? DarkTheme : DefaultTheme,
         colors: {
@@ -34,21 +62,26 @@ function ThemedRoot() {
           background: colors.background,
         },
       }}>
-        <Stack
-          screenOptions={{
-            headerBackTitle: "Back",
-            headerShown: false,
-            animation: "slide_from_right",
-            contentStyle: { backgroundColor: colors.background },
-            gestureEnabled: true,
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
-          <Stack.Screen
-            name="course/[id]"
-            options={{ headerShown: false, animation: "slide_from_right" }}
-          />
-        </Stack>
+        <AuthGate>
+          <Stack
+            screenOptions={{
+              headerBackTitle: "Back",
+              headerShown: false,
+              animation: "slide_from_right",
+              contentStyle: { backgroundColor: colors.background },
+              gestureEnabled: true,
+            }}
+          >
+            <Stack.Screen name="login" options={{ headerShown: false, animation: "none" }} />
+            <Stack.Screen name="register" options={{ headerShown: false, animation: "slide_from_right" }} />
+            <Stack.Screen name="forgot-password" options={{ headerShown: false, animation: "slide_from_right" }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
+            <Stack.Screen
+              name="course/[id]"
+              options={{ headerShown: false, animation: "slide_from_right" }}
+            />
+          </Stack>
+        </AuthGate>
       </NavThemeProvider>
     </>
   );
@@ -73,14 +106,20 @@ export default function RootLayout() {
   }
 
   return (
+    // Wrap app in ErrorBoundary to catch crashes and show fallback
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView>
           <KeyboardProvider>
+            {/* Theme and Academic providers manage global app state */}
             <ThemeProvider>
-              <AcademicProvider>
-                <ThemedRoot />
-              </AcademicProvider>
+              <AuthProvider>
+                <ConfirmProvider>
+                  <AcademicProvider>
+                    <ThemedRoot />
+                  </AcademicProvider>
+                </ConfirmProvider>
+              </AuthProvider>
             </ThemeProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>

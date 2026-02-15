@@ -22,13 +22,15 @@ export class ErrorBoundary extends Component<
   static defaultProps: {
     FallbackComponent: ComponentType<ErrorFallbackProps>;
   } = {
-    FallbackComponent: ErrorFallback,
-  };
+      FallbackComponent: ErrorFallback,
+    };
 
+  // Update state so the next render will show the fallback UI
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
   }
 
+  // Log error details to console or analytics service
   componentDidCatch(error: Error, info: { componentStack: string }): void {
     if (typeof this.props.onError === "function") {
       this.props.onError(error, info.componentStack);
