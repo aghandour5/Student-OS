@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator,
-  TextInput, Keyboard, FlatList, Alert
+  TextInput, Keyboard
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -65,7 +65,7 @@ function getGPAColor(gpa: number): string {
 
 
 
-function SearchResultItem({ course, status, onPress }: {
+const SearchResultItem = React.memo(function SearchResultItem({ course, status, onPress }: {
   course: CourseWithPrereqs;
   status: string;
   onPress: () => void;
@@ -90,7 +90,31 @@ function SearchResultItem({ course, status, onPress }: {
       <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
     </Pressable>
   );
-}
+});
+
+const DashboardCourseItem = React.memo(function DashboardCourseItem({ course, onPress, dotColor, creditColor }: {
+  course: CourseWithPrereqs;
+  onPress: (id: string) => void;
+  dotColor: string;
+  creditColor?: string;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable
+      onPress={() => onPress(course.id)}
+      style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+    >
+      <View style={[styles.enrolledDot, { backgroundColor: dotColor }]} />
+      <View style={styles.enrolledInfo}>
+        <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
+        <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
+      </View>
+      <Text style={[styles.enrolledCredits, { color: creditColor || Colors.courseInProgress }]}>{course.credits}cr</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </Pressable>
+  );
+});
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
@@ -185,6 +209,11 @@ export default function DashboardScreen() {
   const clearSearch = useCallback(() => {
     setSearchQuery('');
     inputRef.current?.focus();
+  }, []);
+
+  const handleCoursePress = useCallback((courseId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({ pathname: '/course/[id]', params: { id: courseId } });
   }, []);
 
   const currentTip = useMemo(() => {
@@ -503,22 +532,13 @@ export default function DashboardScreen() {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Currently Enrolled</Text>
               {inProgressCourses.map(course => (
-                <Pressable
+                <DashboardCourseItem
                   key={course.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push({ pathname: '/course/[id]', params: { id: course.id } });
-                  }}
-                  style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-                >
-                  <View style={[styles.enrolledDot, { backgroundColor: Colors.courseInProgress }]} />
-                  <View style={styles.enrolledInfo}>
-                    <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
-                    <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
-                  </View>
-                  <Text style={styles.enrolledCredits}>{course.credits}cr</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                </Pressable>
+                  course={course}
+                  dotColor={Colors.courseInProgress}
+                  creditColor={Colors.courseInProgress}
+                  onPress={handleCoursePress}
+                />
               ))}
             </View>
           )
@@ -532,22 +552,13 @@ export default function DashboardScreen() {
                 <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{availableCourses.length} courses</Text>
               </View>
               {availableCourses.slice(0, 5).map(course => (
-                <Pressable
+                <DashboardCourseItem
                   key={course.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push({ pathname: '/course/[id]', params: { id: course.id } });
-                  }}
-                  style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-                >
-                  <View style={[styles.enrolledDot, { backgroundColor: colors.primary }]} />
-                  <View style={styles.enrolledInfo}>
-                    <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
-                    <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
-                  </View>
-                  <Text style={[styles.enrolledCredits, { color: colors.primary }]}>{course.credits}cr</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-                </Pressable>
+                  course={course}
+                  dotColor={colors.primary}
+                  creditColor={colors.primary}
+                  onPress={handleCoursePress}
+                />
               ))}
               {availableCourses.length > 5 && (
                 <Pressable
