@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
 import { createProxyMiddleware } from "http-proxy-middleware";
+import { rateLimit } from "./ratelimit";
 
 const app = express();
 const log = console.log;
@@ -169,19 +170,25 @@ function configureExpoAndLanding(app: express.Application) {
       if (req.path.startsWith("/api")) {
         return next();
       }
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader("Cache-Control", "no-cache");
       next();
     });
 
     app.use(express.static(distPath));
 
-    app.get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
+    app.get("/{*path}", (req: Request, res: Response, next: NextFunction) => {
       if (req.path.startsWith("/api")) {
         return next();
       }
       res.sendFile(path.join(distPath, "index.html"));
     });
   } else {
+    const templatePath = path.resolve(
+      process.cwd(),
+      "server",
+      "templates",
+      "landing-page.html",
+    );
     // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
     const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
@@ -253,10 +260,22 @@ function setupErrorHandler(app: express.Application) {
 }
 
 (async () => {
+  app.set("trust proxy", 1);
   setupSecurityHeaders(app);
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
+
+  // Apply rate limiting specifically to /api routes
+  app.use(
+    "/api",
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 200, // Increased limit to be more lenient for legitimate users
+      message:
+        "Too many requests from this IP, please try again after 15 minutes",
+    }),
+  );
 
   configureExpoAndLanding(app);
 
