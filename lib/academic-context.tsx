@@ -17,6 +17,7 @@ import {
 } from '@shared/schema';
 import { offlineCourses, offlineOfferings, type OfflineOffering } from './offline-data';
 import { getApiUrl } from './query-client';
+import { useAuth } from './auth-context';
 
 // AsyncStorage key for persisted student profile
 const STORAGE_KEY = '@uniflow_user_profile';
@@ -88,6 +89,23 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [loaded, setLoaded] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  const { userProfile: authProfile, isGuest } = useAuth();
+
+  // Sync major from authenticated user's Firestore profile
+  useEffect(() => {
+    if (authProfile?.major && !isGuest) {
+      setProfile(prev => {
+        if (prev.major !== authProfile.major) {
+          const updatedProgress = { ...prev.progress };
+          if (!updatedProgress[authProfile.major]) {
+            updatedProgress[authProfile.major] = { ...DEFAULT_MAJOR_PROGRESS };
+          }
+          return { ...prev, major: authProfile.major, progress: updatedProgress };
+        }
+        return prev;
+      });
+    }
+  }, [authProfile?.major, isGuest]);
 
   // Check if server is available
   const serverUrl = getApiUrl();
@@ -188,9 +206,10 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
             delete parsed.grades;
           }
 
-          // Merge deeply to ensure 'EENG' key exists if missing from partial updates
+          // Merge deeply to ensure all major keys exist
           const merged = { ...DEFAULT_PROFILE, ...parsed };
           if (!merged.progress['EENG']) merged.progress['EENG'] = { ...DEFAULT_MAJOR_PROGRESS };
+          if (!merged.progress['MENG']) merged.progress['MENG'] = { ...DEFAULT_MAJOR_PROGRESS };
 
           setProfile(merged);
         } catch (e) {
