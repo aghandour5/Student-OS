@@ -1,24 +1,25 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  ActivityIndicator, TextInput, Modal, FlatList
+  ActivityIndicator, TextInput, FlatList, Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { GestureDetector } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+
 import Colors from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { useAcademic } from '@/lib/academic-context';
 import { GRADE_POINTS, getLetterGrade } from '@shared/schema';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useConfirm } from '@/lib/confirm-context';
 import { TermInfo } from '@/components/TermInfo';
+import { AppFooter } from '@/components/AppFooter';
 
+// Helpers to clamp scores and convert to letter grades
 const clampScore = (score: number) => Math.max(0, Math.min(100, score));
 const scoreToLetterGrade = (score: number) => getLetterGrade(clampScore(score));
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function ToolsScreen() {
   const insets = useSafeAreaInsets();
@@ -29,6 +30,15 @@ export default function ToolsScreen() {
     toggleCourseCompleted, toggleCourseInProgress, resetProfile,
   } = useAcademic();
   const { colors } = useTheme();
+  const { confirm } = useConfirm();
+
+  const currentProgress = profile.progress[profile.major] || {
+    grades: [],
+    completedCourses: [],
+    inProgressCourses: [],
+    semesterPlans: []
+  };
+
 
   const [activeTab, setActiveTab] = useState<'gpa' | 'projection' | 'whatif'>('gpa');
   const [projectionCourse, setProjectionCourse] = useState<string | null>(null);
@@ -37,6 +47,7 @@ export default function ToolsScreen() {
   const [gradeModal, setGradeModal] = useState<string | null>(null);
   const [numericScoreInput, setNumericScoreInput] = useState('');
   const [showManage, setShowManage] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
 
   const courseMap = useMemo(() => {
@@ -47,8 +58,8 @@ export default function ToolsScreen() {
 
   const gpa = calculateGPA();
   const gradesByCategory = useMemo(() => {
-    const grouped = new Map<string, typeof profile.grades>();
-    profile.grades.forEach(g => {
+    const grouped = new Map<string, typeof currentProgress.grades>();
+    currentProgress.grades.forEach(g => {
       const course = courseMap.get(g.courseId);
       if (!course) return;
       const cat = course.category;
@@ -56,8 +67,9 @@ export default function ToolsScreen() {
       grouped.get(cat)!.push(g);
     });
     return grouped;
-  }, [profile.grades, courseMap]);
+  }, [currentProgress.grades, courseMap]);
 
+  // Calculate projected course grade based on component weights
   const projectionResult = useMemo(() => {
     const qW = parseFloat(projWeights.quizzes) / 100 || 0;
     const mW = parseFloat(projWeights.midterm) / 100 || 0;
@@ -73,6 +85,7 @@ export default function ToolsScreen() {
 
     const weighted = (qS * qW + mS * mW + fS * fW) / totalWeight;
     let letterGrade = 'F';
+    // ... logic to determine letter grade
     if (weighted >= 93) letterGrade = 'A';
     else if (weighted >= 90) letterGrade = 'A-';
     else if (weighted >= 87) letterGrade = 'B+';
@@ -88,47 +101,50 @@ export default function ToolsScreen() {
     return { score: weighted, grade: letterGrade };
   }, [projWeights, projScores]);
 
+  // Shared aggregate: total grade points and graded credits (used by targetGPAResult and what-if)
+  const gradeAggregates = useMemo(() => {
+    let points = 0, credits = 0;
+    currentProgress.grades.forEach(g => {
+      const course = courseMap.get(g.courseId);
+      const c = course?.credits ?? 0;
+      points += (GRADE_POINTS[g.grade] ?? 0) * c;
+      credits += c;
+    });
+    return { totalGradePoints: points, totalGradedCredits: credits };
+  }, [currentProgress.grades, courseMap]);
+
+  // Calculate needed GPA for remaining credits to reach target
   const targetGPAResult = useMemo(() => {
-    if (profile.grades.length === 0) return null;
+    if (currentProgress.grades.length === 0) return null;
     const targetGPA = 3.5;
-    const currentPoints = profile.grades.reduce((sum, g) => {
-      const course = courseMap.get(g.courseId);
-      return sum + (GRADE_POINTS[g.grade] ?? 0) * (course?.credits ?? 0);
-    }, 0);
-    const currentCredits = profile.grades.reduce((sum, g) => {
-      const course = courseMap.get(g.courseId);
-      return sum + (course?.credits ?? 0);
-    }, 0);
-    const remainingCredits = totalCredits - currentCredits;
+    const remainingCredits = totalCredits - gradeAggregates.totalGradedCredits;
     if (remainingCredits <= 0) return null;
-    const neededPoints = targetGPA * (currentCredits + remainingCredits) - currentPoints;
+    const neededPoints = targetGPA * (gradeAggregates.totalGradedCredits + remainingCredits) - gradeAggregates.totalGradePoints;
     const neededGPA = neededPoints / remainingCredits;
     return { needed: Math.max(0, neededGPA), remaining: remainingCredits };
-  }, [profile.grades, courseMap, totalCredits]);
+  }, [currentProgress.grades, gradeAggregates, totalCredits]);
 
   useEffect(() => {
     if (!gradeModal) {
       setNumericScoreInput('');
       return;
     }
-    const existing = profile.grades.find(g => g.courseId === gradeModal);
+    const existing = currentProgress.grades.find(g => g.courseId === gradeModal);
     const existingScore = existing?.score;
     const hasNumericScore = typeof existingScore === 'number'
       && existingScore >= 0
       && existingScore <= 100
       && (existingScore > 4 || existingScore === 0);
     setNumericScoreInput(hasNumericScore ? String(existingScore) : '');
-  }, [gradeModal, profile.grades]);
+  }, [gradeModal, currentProgress.grades]);
 
 
 
   const closeGradeModal = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setGradeModal(null);
   }, []);
 
   const closeModal = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowManage(false);
   }, []);
 
@@ -189,7 +205,7 @@ export default function ToolsScreen() {
   };
 
   const existingGrade = gradeModal
-    ? profile.grades.find(g => g.courseId === gradeModal)
+    ? currentProgress.grades.find(g => g.courseId === gradeModal)
     : undefined;
   const numericScoreValue = numericScoreInput.trim() === '' ? null : Number(numericScoreInput);
   const isValidScore = numericScoreValue !== null
@@ -212,15 +228,26 @@ export default function ToolsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + webTopInset + 12 }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Academic Tools</Text>
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowManage(true);
-          }}
-          style={[styles.manageBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-        >
-          <MaterialCommunityIcons name="cog-outline" size={20} color={colors.textSecondary} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowSupport(true);
+            }}
+            style={[styles.manageBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowManage(true);
+            }}
+            style={[styles.manageBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+          >
+            <MaterialCommunityIcons name="cog-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={[styles.tabRow, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -289,7 +316,9 @@ export default function ToolsScreen() {
                 return { category: cat, avgGPA, count: grades.length };
               });
 
-              const allGrades = profile.grades;
+
+
+              const allGrades = currentProgress.grades;
               const totalGraded = allGrades.length;
               const avgScore = totalGraded > 0
                 ? allGrades.reduce((sum, g) => sum + (g.score ?? 0), 0) / totalGraded
@@ -360,9 +389,9 @@ export default function ToolsScreen() {
             <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>Tap a course to assign a grade</Text>
 
             {courses.filter(c =>
-              profile.completedCourses.includes(c.id) || profile.inProgressCourses.includes(c.id)
+              currentProgress.completedCourses.includes(c.id) || currentProgress.inProgressCourses.includes(c.id)
             ).map(course => {
-              const existingGrade = profile.grades.find(g => g.courseId === course.id);
+              const existingGrade = currentProgress.grades.find(g => g.courseId === course.id);
               return (
                 <Pressable
                   key={course.id}
@@ -388,7 +417,7 @@ export default function ToolsScreen() {
               );
             })}
 
-            {profile.completedCourses.length === 0 && profile.inProgressCourses.length === 0 && (
+            {currentProgress.completedCourses.length === 0 && currentProgress.inProgressCourses.length === 0 && (
               <View style={styles.emptyGrades}>
                 <Ionicons name="school-outline" size={36} color={colors.textMuted} />
                 <Text style={[styles.emptyText, { color: colors.textMuted }]}>Mark courses as completed or in-progress to set grades</Text>
@@ -403,36 +432,71 @@ export default function ToolsScreen() {
             <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>Calculate your expected final grade</Text>
 
             <View style={styles.projGrid}>
-              {['quizzes', 'midterm', 'final'].map(comp => (
-                <View key={comp} style={styles.projItem}>
-                  <Text style={[styles.projLabel, { color: colors.text }]}>{comp.charAt(0).toUpperCase() + comp.slice(1)}</Text>
-                  <View style={styles.projInputRow}>
-                    <View style={styles.projInputContainer}>
-                      <Text style={[styles.projInputLabel, { color: colors.textMuted }]}>Weight %</Text>
-                      <TextInput
-                        style={[styles.projInput, { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text }]}
-                        value={(projWeights as any)[comp]}
-                        onChangeText={v => { const cleaned = v.replace(/[^0-9.]/g, ''); setProjWeights(prev => ({ ...prev, [comp]: cleaned })); }}
-                        keyboardType="numeric"
-                        placeholder="0"
-                        placeholderTextColor={colors.textMuted}
-                      />
-                    </View>
-                    <View style={styles.projInputContainer}>
-                      <Text style={[styles.projInputLabel, { color: colors.textMuted }]}>Score %</Text>
-                      <TextInput
-                        style={[styles.projInput, { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text }]}
-                        value={(projScores as any)[comp]}
-                        onChangeText={v => { const cleaned = v.replace(/[^0-9.]/g, ''); setProjScores(prev => ({ ...prev, [comp]: cleaned })); }}
-                        keyboardType="numeric"
-                        placeholder="0"
-                        placeholderTextColor={colors.textMuted}
-                      />
+              {['quizzes', 'midterm', 'final'].map(comp => {
+                const totalWeight = ['quizzes', 'midterm', 'final'].reduce(
+                  (sum, key) => sum + (parseFloat((projWeights as any)[key]) || 0), 0
+                );
+                return (
+                  <View key={comp} style={styles.projItem}>
+                    <Text style={[styles.projLabel, { color: colors.text }]}>{comp.charAt(0).toUpperCase() + comp.slice(1)}</Text>
+                    <View style={styles.projInputRow}>
+                      <View style={styles.projInputContainer}>
+                        <Text style={[styles.projInputLabel, { color: colors.textMuted }]}>Weight %</Text>
+                        <TextInput
+                          style={[styles.projInput, { backgroundColor: colors.card, borderColor: totalWeight > 100 ? Colors.danger : colors.cardBorder, color: colors.text }]}
+                          value={(projWeights as any)[comp]}
+                          onChangeText={v => {
+                            const cleaned = v.replace(/[^0-9.]/g, '');
+                            const newVal = parseFloat(cleaned) || 0;
+                            // Calculate sum of OTHER weights
+                            const otherWeights = ['quizzes', 'midterm', 'final']
+                              .filter(k => k !== comp)
+                              .reduce((sum, k) => sum + (parseFloat((projWeights as any)[k]) || 0), 0);
+                            // Clamp so total can't exceed 100
+                            const maxAllowed = 100 - otherWeights;
+                            const clamped = Math.min(newVal, Math.max(0, maxAllowed));
+                            setProjWeights(prev => ({ ...prev, [comp]: cleaned === '' ? '' : String(clamped) }));
+                          }}
+                          keyboardType="numeric"
+                          placeholder="0"
+                          placeholderTextColor={colors.textMuted}
+                        />
+                      </View>
+                      <View style={styles.projInputContainer}>
+                        <Text style={[styles.projInputLabel, { color: colors.textMuted }]}>Score %</Text>
+                        <TextInput
+                          style={[styles.projInput, { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text }]}
+                          value={(projScores as any)[comp]}
+                          onChangeText={v => {
+                            const cleaned = v.replace(/[^0-9.]/g, '');
+                            const num = parseFloat(cleaned) || 0;
+                            const clamped = Math.min(num, 100);
+                            setProjScores(prev => ({ ...prev, [comp]: cleaned === '' ? '' : String(clamped) }));
+                          }}
+                          keyboardType="numeric"
+                          placeholder="0"
+                          placeholderTextColor={colors.textMuted}
+                        />
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
+
+            {/* Total weight indicator */}
+            {(() => {
+              const total = ['quizzes', 'midterm', 'final'].reduce(
+                (sum, k) => sum + (parseFloat((projWeights as any)[k]) || 0), 0
+              );
+              return (
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 4, marginTop: -4, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: total === 100 ? Colors.courseCompleted : total > 100 ? Colors.danger : colors.textMuted }}>
+                    Total weight: {total}%{total === 100 ? ' ✓' : total < 100 ? ` (${100 - total}% remaining)` : ' ⚠ exceeds 100%'}
+                  </Text>
+                </View>
+              );
+            })()}
 
             {projectionResult && (
               <View style={[styles.projResult, { backgroundColor: colors.card }]}>
@@ -486,23 +550,15 @@ export default function ToolsScreen() {
               </View>
             </View>
 
-            {profile.grades.length > 0 && (
+            {currentProgress.grades.length > 0 && (
               <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <Ionicons name="flag" size={20} color={Colors.warning} />
                 <View style={styles.whatifContent}>
                   <Text style={[styles.whatifTitle, { color: colors.text }]}>GPA targets</Text>
                   {[3.0, 3.5, 3.7].map(target => {
-                    const currentPoints = profile.grades.reduce((sum, g) => {
-                      const course = courseMap.get(g.courseId);
-                      return sum + (GRADE_POINTS[g.grade] ?? 0) * (course?.credits ?? 0);
-                    }, 0);
-                    const currentCredits = profile.grades.reduce((sum, g) => {
-                      const course = courseMap.get(g.courseId);
-                      return sum + (course?.credits ?? 0);
-                    }, 0);
-                    const remaining = totalCredits - currentCredits;
+                    const remaining = totalCredits - gradeAggregates.totalGradedCredits;
                     if (remaining <= 0) return null;
-                    const needed = (target * (currentCredits + remaining) - currentPoints) / remaining;
+                    const needed = (target * (gradeAggregates.totalGradedCredits + remaining) - gradeAggregates.totalGradePoints) / remaining;
                     const possible = needed <= 4.0;
                     return (
                       <Text key={target} style={[styles.whatifDesc, { color: possible ? Colors.accent : Colors.danger }]}>
@@ -515,6 +571,10 @@ export default function ToolsScreen() {
             )}
           </>
         )}
+
+
+
+        <AppFooter />
       </ScrollView>
 
       <BottomSheet
@@ -605,10 +665,17 @@ export default function ToolsScreen() {
           style={{ flexGrow: 1, maxHeight: '95%' }} // Grow but leave small room for footer
           ListFooterComponent={() => (
             <Pressable
-              onPress={() => {
-                resetProfile();
-                setShowManage(false);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              onPress={async () => {
+                if (await confirm({
+                  title: 'Reset All Progress',
+                  message: 'This will clear all grades, courses, and plans. This action cannot be undone.',
+                  confirmText: 'Reset',
+                  variant: 'danger',
+                })) {
+                  resetProfile();
+                  setShowManage(false);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                }
               }}
               style={styles.resetBtn}
             >
@@ -617,6 +684,52 @@ export default function ToolsScreen() {
             </Pressable>
           )}
         />
+      </BottomSheet>
+      <BottomSheet
+        visible={showSupport}
+        onClose={() => setShowSupport(false)}
+        title="Feedback & Support"
+
+      >
+        <View style={{ paddingHorizontal: 16 }}>
+          <Text style={[styles.sectionSubtitle, { color: colors.textMuted, marginBottom: 20 }]}>
+            Encountered a bug or have a suggestion? Let us know!
+          </Text>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 }
+            ]}
+            onPress={() => Linking.openURL('https://wa.me/96179307904')}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#25D366' + '20' }]}>
+              <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>Contact via WhatsApp</Text>
+              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>Chat directly with the developer</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1, marginTop: 12 }
+            ]}
+            onPress={() => Linking.openURL('mailto:aghandour090@gmail.com?subject=StudentOS Feedback')}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: '#EA4335' + '20' }]}>
+              <Ionicons name="mail" size={24} color="#EA4335" />
+            </View>
+            <View style={styles.actionContent}>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>Send an Email</Text>
+              <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>Submit a detailed bug report</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </Pressable>
+        </View>
       </BottomSheet>
     </View>
   );
@@ -658,11 +771,12 @@ const styles = StyleSheet.create({
   },
   tabRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginHorizontal: 16,
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 12,
+    padding: 6,
+    borderRadius: 16,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
   },
@@ -672,8 +786,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   tabActive: {
     backgroundColor: Colors.primary + '20',
@@ -1146,6 +1260,38 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: Colors.cardBorder,
     overflow: 'hidden' as const,
+  },
+  sectionHeader: {
+    marginBottom: 24,
+  },
+
+  actionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  actionContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  actionDesc: {
+    fontSize: 13,
   },
   distBarFill: {
     height: 6,

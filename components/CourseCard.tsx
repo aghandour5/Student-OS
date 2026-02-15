@@ -1,3 +1,13 @@
+/**
+ * CourseCard — Displays a course with status-driven visual treatment.
+ *
+ * Two layout variants:
+ * - **Full** (default): shows code, title, category, credits, prereq count, and optional grade
+ * - **Compact**: single-row layout with code, title, and credits
+ *
+ * The left-edge color strip and badge are driven by `statusConfig`
+ * which maps each CourseStatus to a color, icon, and label.
+ */
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -16,6 +26,7 @@ interface CourseCardProps {
   grade?: string;
 }
 
+// Maps each course lifecycle status to its visual treatment
 const statusConfig: Record<CourseStatus, { color: string; icon: string; label: string }> = {
   completed: { color: Colors.courseCompleted, icon: 'checkmark-circle', label: 'Completed' },
   in_progress: { color: Colors.courseInProgress, icon: 'time', label: 'In Progress' },
