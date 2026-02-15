@@ -12,6 +12,8 @@ export interface IStorage {
   getAllCourses(): Promise<Course[]>;
   getCourse(id: string): Promise<Course | undefined>;
   getAllPrerequisites(): Promise<Prerequisite[]>;
+  getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]>;
+  getPostrequisitesForCourse(courseId: string): Promise<Prerequisite[]>;
   getAllOfferings(): Promise<Offering[]>;
   getOfferingsForCourse(courseId: string): Promise<Offering[]>;
   getCoursesWithPrereqs(): Promise<CourseWithPrereqs[]>;
@@ -19,13 +21,19 @@ export interface IStorage {
 }
 
 export class FirebaseStorage implements IStorage {
+  private db: any;
+
+  constructor(firestoreInstance: any = db) {
+    this.db = firestoreInstance;
+  }
+
   async getUser(id: string): Promise<User | undefined> {
-    const doc = await db.collection("users").doc(id).get();
+    const doc = await this.db.collection("users").doc(id).get();
     return doc.exists ? (doc.data() as User) : undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const snapshot = await db.collection("users").where("username", "==", username).limit(1).get();
+    const snapshot = await this.db.collection("users").where("username", "==", username).limit(1).get();
     if (snapshot.empty) return undefined;
     return snapshot.docs[0].data() as User;
   }
@@ -33,12 +41,12 @@ export class FirebaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = crypto.randomUUID();
     const newUser: User = { ...insertUser, id };
-    await db.collection("users").doc(id).set(newUser);
+    await this.db.collection("users").doc(id).set(newUser);
     return newUser;
   }
 
   async getAllCourses(): Promise<Course[]> {
-    const snapshot = await db.collection("courses").get();
+    const snapshot = await this.db.collection("courses").get();
     const courses = snapshot.docs.map(doc => doc.data() as Course);
     return courses.sort((a, b) => {
       if (a.year !== b.year) return a.year - b.year;
@@ -47,22 +55,36 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getCourse(id: string): Promise<Course | undefined> {
-    const doc = await db.collection("courses").doc(id).get();
+    const doc = await this.db.collection("courses").doc(id).get();
     return doc.exists ? (doc.data() as Course) : undefined;
   }
 
   async getAllPrerequisites(): Promise<Prerequisite[]> {
-    const snapshot = await db.collection("prerequisites").get();
+    const snapshot = await this.db.collection("prerequisites").get();
+    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+  }
+
+  async getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
+    const snapshot = await this.db.collection("prerequisites")
+      .where("courseId", "==", courseId)
+      .get();
+    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+  }
+
+  async getPostrequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
+    const snapshot = await this.db.collection("prerequisites")
+      .where("requiresCourseId", "==", courseId)
+      .get();
     return snapshot.docs.map(doc => doc.data() as Prerequisite);
   }
 
   async getAllOfferings(): Promise<Offering[]> {
-    const snapshot = await db.collection("offerings").get();
+    const snapshot = await this.db.collection("offerings").get();
     return snapshot.docs.map(doc => doc.data() as Offering);
   }
 
   async getOfferingsForCourse(courseId: string): Promise<Offering[]> {
-    const snapshot = await db.collection("offerings").where("courseId", "==", courseId).get();
+    const snapshot = await this.db.collection("offerings").where("courseId", "==", courseId).get();
     return snapshot.docs.map(doc => doc.data() as Offering);
   }
 
@@ -93,7 +115,7 @@ export class FirebaseStorage implements IStorage {
   async seedData(): Promise<void> {
     const { seedCourses, seedPrerequisites, seedOfferings } = await import("./seed-data");
 
-    const coursesRef = db.collection("courses");
+    const coursesRef = this.db.collection("courses");
     const snapshot = await coursesRef.limit(1).get();
 
     if (!snapshot.empty) {
@@ -104,7 +126,7 @@ export class FirebaseStorage implements IStorage {
     console.log("Seeding Firestore database...");
 
     const batchSize = 400; // Firestore batch limit is 500
-    let batch = db.batch();
+    let batch = this.db.batch();
     let count = 0;
 
     const commits = [];
@@ -115,13 +137,13 @@ export class FirebaseStorage implements IStorage {
       count++;
       if (count >= batchSize) {
         commits.push(batch.commit());
-        batch = db.batch();
+        batch = this.db.batch();
         count = 0;
       }
     }
 
     // Seed Prerequisites
-    const prereqsRef = db.collection("prerequisites");
+    const prereqsRef = this.db.collection("prerequisites");
     for (const p of seedPrerequisites) {
       // Use composite ID for idempotent seeding
       const id = `${p.courseId}-${p.requiresCourseId}`;
@@ -129,13 +151,13 @@ export class FirebaseStorage implements IStorage {
       count++;
       if (count >= batchSize) {
         commits.push(batch.commit());
-        batch = db.batch();
+        batch = this.db.batch();
         count = 0;
       }
     }
 
     // Seed Offerings
-    const offeringsRef = db.collection("offerings");
+    const offeringsRef = this.db.collection("offerings");
     for (const o of seedOfferings) {
       // Create a deterministic ID if possible or use auto-id but we need one for the doc ref
       // The seed data doesn't have IDs in the array, but let's generate unique ones or let Firestore do it
@@ -145,7 +167,7 @@ export class FirebaseStorage implements IStorage {
       count++;
       if (count >= batchSize) {
         commits.push(batch.commit());
-        batch = db.batch();
+        batch = this.db.batch();
         count = 0;
       }
     }

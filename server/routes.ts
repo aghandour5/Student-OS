@@ -28,10 +28,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Course not found" });
       }
 
-      const allPrereqs = await storage.getAllPrerequisites();
-      const prereqs = allPrereqs.filter(p => p.courseId === course.id).map(p => p.requiresCourseId);
-      const unlocks = allPrereqs.filter(p => p.requiresCourseId === course.id).map(p => p.courseId);
-      const courseOfferings = await storage.getOfferingsForCourse(course.id);
+      const [prereqList, unlockList, courseOfferings] = await Promise.all([
+        storage.getPrerequisitesForCourse(course.id),
+        storage.getPostrequisitesForCourse(course.id),
+        storage.getOfferingsForCourse(course.id)
+      ]);
+
+      const prereqs = prereqList.map(p => p.requiresCourseId);
+      const unlocks = unlockList.map(p => p.courseId);
 
       res.json({
         ...course,
