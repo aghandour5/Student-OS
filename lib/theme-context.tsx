@@ -1,3 +1,8 @@
+/**
+ * ThemeContext — Provides dark/light theme toggle with AsyncStorage persistence.
+ * The selected theme is stored so the user's preference survives app restarts.
+ * Components access the current color palette via the `useTheme()` hook.
+ */
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -19,6 +24,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   colors: Colors,
 });
 
+// AsyncStorage key for persisting the user's theme preference
 const THEME_KEY = '@uniflow_theme';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -40,6 +46,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // Resolve the color palette based on the active theme
   const colors = theme === 'dark' ? Colors : LightColors;
 
   return (

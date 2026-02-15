@@ -17,8 +17,11 @@ type BottomSheetDragOptions = {
   springConfig?: WithSpringConfig;
 };
 
+// Minimum drag distance (px) before the sheet considers closing
 const DEFAULT_THRESHOLD = 120;
+// Minimum fling velocity (px/s) that triggers close regardless of distance
 const DEFAULT_VELOCITY = 900;
+// Spring animation config for snapping back to the open position
 const DEFAULT_SPRING: WithSpringConfig = {
   damping: 16,
   stiffness: 200,
@@ -38,6 +41,7 @@ export function useBottomSheetDrag(
   const translateY = useSharedValue(0);
   const screenHeight = Dimensions.get('window').height;
 
+  // Expand the touch target beyond the drag handle for easier grabbing
   const hitSlop = useMemo(
     () => options.hitSlop ?? { top: 12, bottom: 12, left: 24, right: 24 },
     [options.hitSlop]
@@ -46,6 +50,7 @@ export function useBottomSheetDrag(
   const velocityThreshold = options.velocityThreshold ?? DEFAULT_VELOCITY;
   const springConfig = options.springConfig ?? DEFAULT_SPRING;
 
+  // Reset translation when the sheet closes (so it starts fresh on re-open)
   useEffect(() => {
     if (!isOpen) {
       translateY.value = 0;

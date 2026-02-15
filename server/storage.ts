@@ -1,17 +1,9 @@
-import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
 import {
-  users, courses, prerequisites, offerings,
+  users,
   type User, type InsertUser, type Course, type Prerequisite, type Offering,
   type CourseWithPrereqs
 } from "@shared/schema";
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const db = drizzle(pool);
+import { db } from "./firebase";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -20,47 +12,80 @@ export interface IStorage {
   getAllCourses(): Promise<Course[]>;
   getCourse(id: string): Promise<Course | undefined>;
   getAllPrerequisites(): Promise<Prerequisite[]>;
+  getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]>;
+  getPostrequisitesForCourse(courseId: string): Promise<Prerequisite[]>;
   getAllOfferings(): Promise<Offering[]>;
   getOfferingsForCourse(courseId: string): Promise<Offering[]>;
   getCoursesWithPrereqs(): Promise<CourseWithPrereqs[]>;
   seedData(): Promise<void>;
 }
 
-export class DatabaseStorage implements IStorage {
+export class FirebaseStorage implements IStorage {
+  private db: any;
+
+  constructor(firestoreInstance: any = db) {
+    this.db = firestoreInstance;
+  }
+
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    const doc = await this.db.collection("users").doc(id).get();
+    return doc.exists ? (doc.data() as User) : undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    const snapshot = await this.db.collection("users").where("username", "==", username).limit(1).get();
+    if (snapshot.empty) return undefined;
+    return snapshot.docs[0].data() as User;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+    const id = crypto.randomUUID();
+    const newUser: User = { ...insertUser, id };
+    await this.db.collection("users").doc(id).set(newUser);
+    return newUser;
   }
 
   async getAllCourses(): Promise<Course[]> {
-    return db.select().from(courses).orderBy(courses.year, courses.semester);
+    const snapshot = await this.db.collection("courses").get();
+    const courses = snapshot.docs.map(doc => doc.data() as Course);
+    return courses.sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.semester - b.semester;
+    });
   }
 
   async getCourse(id: string): Promise<Course | undefined> {
-    const [course] = await db.select().from(courses).where(eq(courses.id, id));
-    return course;
+    const doc = await this.db.collection("courses").doc(id).get();
+    return doc.exists ? (doc.data() as Course) : undefined;
   }
 
   async getAllPrerequisites(): Promise<Prerequisite[]> {
-    return db.select().from(prerequisites);
+    const snapshot = await this.db.collection("prerequisites").get();
+    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+  }
+
+  async getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
+    const snapshot = await this.db.collection("prerequisites")
+      .where("courseId", "==", courseId)
+      .get();
+    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+  }
+
+  async getPostrequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
+    const snapshot = await this.db.collection("prerequisites")
+      .where("requiresCourseId", "==", courseId)
+      .get();
+    return snapshot.docs.map(doc => doc.data() as Prerequisite);
   }
 
   async getAllOfferings(): Promise<Offering[]> {
-    return db.select().from(offerings);
+    const snapshot = await this.db.collection("offerings").get();
+    return snapshot.docs.map(doc => doc.data() as Offering);
   }
 
   async getOfferingsForCourse(courseId: string): Promise<Offering[]> {
-    return db.select().from(offerings).where(eq(offerings.courseId, courseId));
+    const snapshot = await this.db.collection("offerings").where("courseId", "==", courseId).get();
+    return snapshot.docs.map(doc => doc.data() as Offering);
   }
 
   async getCoursesWithPrereqs(): Promise<CourseWithPrereqs[]> {
@@ -70,6 +95,7 @@ export class DatabaseStorage implements IStorage {
     const prereqMap = new Map<string, string[]>();
     const unlocksMap = new Map<string, string[]>();
 
+    // In-memory join
     for (const p of allPrereqs) {
       if (!prereqMap.has(p.courseId)) prereqMap.set(p.courseId, []);
       prereqMap.get(p.courseId)!.push(p.requiresCourseId);
@@ -82,34 +108,77 @@ export class DatabaseStorage implements IStorage {
       ...course,
       prerequisites: prereqMap.get(course.id) || [],
       unlocks: unlocksMap.get(course.id) || [],
+      corequisites: [],
     }));
   }
 
   async seedData(): Promise<void> {
     const { seedCourses, seedPrerequisites, seedOfferings } = await import("./seed-data");
 
-    const existingCourses = await db.select().from(courses);
-    if (existingCourses.length > 0) {
+    const coursesRef = this.db.collection("courses");
+    const snapshot = await coursesRef.limit(1).get();
+
+    if (!snapshot.empty) {
       console.log("Database already seeded, skipping...");
       return;
     }
 
-    console.log("Seeding database with Computer Engineering courses...");
+    console.log("Seeding Firestore database...");
 
+    const batchSize = 400; // Firestore batch limit is 500
+    let batch = this.db.batch();
+    let count = 0;
+
+    const commits = [];
+
+    // Seed Courses
     for (const c of seedCourses) {
-      await db.insert(courses).values(c);
+      batch.set(coursesRef.doc(c.id), c);
+      count++;
+      if (count >= batchSize) {
+        commits.push(batch.commit());
+        batch = this.db.batch();
+        count = 0;
+      }
     }
 
+    // Seed Prerequisites
+    const prereqsRef = this.db.collection("prerequisites");
     for (const p of seedPrerequisites) {
-      await db.insert(prerequisites).values(p);
+      // Use composite ID for idempotent seeding
+      const id = `${p.courseId}-${p.requiresCourseId}`;
+      batch.set(prereqsRef.doc(id), { ...p, id });
+      count++;
+      if (count >= batchSize) {
+        commits.push(batch.commit());
+        batch = this.db.batch();
+        count = 0;
+      }
     }
 
+    // Seed Offerings
+    const offeringsRef = this.db.collection("offerings");
     for (const o of seedOfferings) {
-      await db.insert(offerings).values(o);
+      // Create a deterministic ID if possible or use auto-id but we need one for the doc ref
+      // The seed data doesn't have IDs in the array, but let's generate unique ones or let Firestore do it
+      // For batch.set we need a doc ref. 
+      const ref = offeringsRef.doc();
+      batch.set(ref, { ...o, id: ref.id });
+      count++;
+      if (count >= batchSize) {
+        commits.push(batch.commit());
+        batch = this.db.batch();
+        count = 0;
+      }
     }
 
+    if (count > 0) {
+      commits.push(batch.commit());
+    }
+
+    await Promise.all(commits);
     console.log(`Seeded ${seedCourses.length} courses, ${seedPrerequisites.length} prerequisites, ${seedOfferings.length} offerings`);
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new FirebaseStorage();

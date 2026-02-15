@@ -15,17 +15,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get specific course details including offerings and relational data
   app.get("/api/courses/:id", async (req, res) => {
     try {
-      const course = await storage.getCourse(req.params.id);
+      // Validate route parameter to prevent injection
+      const id = req.params.id;
+      if (!id || id.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+        return res.status(400).json({ message: "Invalid course ID" });
+      }
+      const course = await storage.getCourse(id);
       if (!course) {
         return res.status(404).json({ message: "Course not found" });
       }
 
-      const allPrereqs = await storage.getAllPrerequisites();
-      const prereqs = allPrereqs.filter(p => p.courseId === course.id).map(p => p.requiresCourseId);
-      const unlocks = allPrereqs.filter(p => p.requiresCourseId === course.id).map(p => p.courseId);
-      const courseOfferings = await storage.getOfferingsForCourse(course.id);
+      const [prereqList, unlockList, courseOfferings] = await Promise.all([
+        storage.getPrerequisitesForCourse(course.id),
+        storage.getPostrequisitesForCourse(course.id),
+        storage.getOfferingsForCourse(course.id)
+      ]);
+
+      const prereqs = prereqList.map(p => p.requiresCourseId);
+      const unlocks = unlockList.map(p => p.courseId);
 
       res.json({
         ...course,
