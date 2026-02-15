@@ -30,7 +30,7 @@ export default function CourseDetailScreen() {
   const {
     courses, getCourseStatus, getPrerequisitesFor, getUnlockedBy,
     getMissingPrereqs, toggleCourseCompleted, toggleCourseInProgress,
-    arePrereqsMet, profile, setCourseNote, getCourseNote, getPrerequisiteChain,
+    arePrereqsMet, profile, grades, setCourseNote, getCourseNote, getPrerequisiteChain,
   } = useAcademic();
   const { colors } = useTheme();
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
@@ -55,7 +55,7 @@ export default function CourseDetailScreen() {
   const unlocks = course ? getUnlockedBy(course.id) : [];
   const missingPrereqs = course ? getMissingPrereqs(course.id) : [];
   const offerings: Offering[] = courseDetail?.offerings || [];
-  const grade = profile.grades.find(g => g.courseId === id);
+  const grade = grades.find(g => g.courseId === id);
 
   const courseId = id!;
   const chain = getPrerequisiteChain(courseId);
@@ -68,7 +68,7 @@ export default function CourseDetailScreen() {
 
   useEffect(() => { setNoteText(note); noteRef.current = note; }, [note]);
 
-  // Debounced auto-save: saves 500ms after user stops typing
+  // Debounced auto-save: saves 500ms after user stops typing to avoid excessive writes
   const handleNoteChange = useCallback((text: string) => {
     setNoteText(text);
     noteRef.current = text;
@@ -100,25 +100,11 @@ export default function CourseDetailScreen() {
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  const { cleanDescription, corequisites } = useMemo(() => {
-    if (!course) return { cleanDescription: '', corequisites: [] };
-
-    const parts = course.description.split(/Corequisites:\s*/);
-    if (parts.length === 1) return { cleanDescription: course.description, corequisites: [] };
-
-    const desc = parts[0].trim();
-    const coreqText = parts[1].trim();
-
-    if (coreqText === 'None.' || coreqText === 'None') {
-      return { cleanDescription: desc, corequisites: [] };
-    }
-
-    const codes = coreqText.replace(/\.$/, '').split(',').map(c => c.trim());
-    const matchedCourses = codes
-      .map(code => courses.find(c => c.code === code))
+  const corequisites = useMemo(() => {
+    if (!course || !course.corequisites || course.corequisites.length === 0) return [];
+    return course.corequisites
+      .map(code => courses.find(c => c.code === code || c.id === code))
       .filter((c): c is typeof courses[0] => !!c);
-
-    return { cleanDescription: desc, corequisites: matchedCourses };
   }, [course, courses]);
 
   if (!course) {
@@ -205,7 +191,7 @@ export default function CourseDetailScreen() {
 
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>{cleanDescription}</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{course.description}</Text>
           </View>
 
           <View style={styles.actionRow}>

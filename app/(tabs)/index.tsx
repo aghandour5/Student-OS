@@ -1,35 +1,26 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator,
-  TextInput, Keyboard, FlatList
+  TextInput, Keyboard, FlatList, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import Svg, { Circle } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { useAcademic } from '@/lib/academic-context';
+import { useConfirm } from '@/lib/confirm-context';
 import { useTheme } from '@/lib/theme-context';
 import { ProgressRing } from '@/components/ProgressRing';
 import { StatCard } from '@/components/StatCard';
 import type { CourseWithPrereqs } from '@shared/schema';
 
 import { TermInfo } from '@/components/TermInfo';
+import { AppFooter } from '@/components/AppFooter';
+import { BottomSheet } from '@/components/BottomSheet';
 
-const CATEGORY_ABBREV: Record<string, string> = {
-  'Foundation': 'Found',
-  'Mathematics': 'Math',
-  'Science': 'Sci',
-  'Computer Engineering': 'CE',
-  'Computer Science': 'CS',
-  'Electrical Engineering': 'EE',
-  'Engineering Core': 'Eng',
-  'General Education': 'GenEd',
-  'Elective': 'Elec',
-  'Capstone': 'Cap',
-};
+
 
 const SMART_TIPS = [
   'Tip: Complete prerequisites early to unlock more courses.',
@@ -45,15 +36,26 @@ const TIP_BORDER_COLORS = [
   Colors.categoryColors['Capstone'],
 ];
 
-function OfflineBanner({ topInset }: { topInset: number }) {
+// Banner showing connection status
+function ConnectionBanner({ topInset, isOnline }: { topInset: number; isOnline: boolean }) {
+  if (isOnline) {
+    return (
+      <View style={[styles.offlineBanner, { paddingTop: topInset + 8, backgroundColor: Colors.courseCompleted + '15' }]}>
+        <Ionicons name="cloud-done-outline" size={14} color={Colors.courseCompleted} />
+        <Text style={[styles.offlineText, { color: Colors.courseCompleted }]}>Connected to Database</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.offlineBanner, { paddingTop: topInset + 8 }]}>
       <Ionicons name="cloud-offline-outline" size={14} color={Colors.warning} />
-      <Text style={styles.offlineText}>Offline mode - using local data</Text>
+      <Text style={styles.offlineText}>Offline mode</Text>
     </View>
   );
 }
 
+// Helper to determine color based on GPA value
 function getGPAColor(gpa: number): string {
   if (gpa >= 3.5) return Colors.gpaExcellent;
   if (gpa >= 3.0) return Colors.gpaGood;
@@ -61,45 +63,7 @@ function getGPAColor(gpa: number): string {
   return Colors.gpaLow;
 }
 
-function SmallProgressRing({ progress, size, strokeWidth, color }: {
-  progress: number; size: number; strokeWidth: number; color: string;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const clamped = Math.min(Math.max(progress, 0), 1);
-  const offset = circumference * (1 - clamped);
 
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={{ position: 'absolute' as any }}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={Colors.cardBorder}
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          rotation="-90"
-          origin={`${size / 2}, ${size / 2}`}
-        />
-      </Svg>
-      <Text style={{ fontSize: 10, color: Colors.text, fontFamily: 'Inter_600SemiBold' }}>
-        {Math.round(clamped * 100)}%
-      </Text>
-    </View>
-  );
-}
 
 function SearchResultItem({ course, status, onPress }: {
   course: CourseWithPrereqs;
@@ -135,15 +99,36 @@ export default function DashboardScreen() {
     totalCredits, completedCredits, inProgressCredits,
     calculateGPA, getCourseStatus,
     toggleYearCompleted, isYearCompleted,
+    setMajor,
   } = useAcademic();
-
-  const { isDark, toggleTheme, colors } = useTheme();
+  const { confirm } = useConfirm();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All');
   const [dismissedTips, setDismissedTips] = useState<number[]>([]);
+  const [majorSheetVisible, setMajorSheetVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
+
+  // Human-readable major label
+  const majorLabel = profile.major === 'EENG' ? 'Electrical Engineering' :
+    profile.major === 'MENG' ? 'Mechanical Engineering' :
+      'Computer Engineering';
+
+  // Open major selection sheet
+  const handleSwitchMajor = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMajorSheetVisible(true);
+  }, []);
+
+  const handleSelectMajor = useCallback((major: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setMajor(major);
+    setMajorSheetVisible(false);
+  }, [setMajor]);
+
+  const { isDark, toggleTheme, colors } = useTheme();
+
 
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
   const gpa = calculateGPA();
@@ -171,6 +156,7 @@ export default function DashboardScreen() {
     return stats;
   }, [courses, getCourseStatus, categoryNames]);
 
+  // Filter search results based on query and selected category
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase().trim();
@@ -187,6 +173,7 @@ export default function DashboardScreen() {
 
   const showResults = searchFocused && searchQuery.trim().length > 0;
 
+  // Navigate to course details on selection
   const handleSearchSelect = useCallback((courseId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSearchQuery('');
@@ -234,13 +221,16 @@ export default function DashboardScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {!isOnline && <OfflineBanner topInset={insets.top} />}
-      <View style={[styles.fixedHeader, { paddingTop: !isOnline ? insets.top + 8 : insets.top + webTopInset + 16, backgroundColor: colors.background }]}>
+      <ConnectionBanner topInset={insets.top} isOnline={isOnline} />
+      <View style={[styles.fixedHeader, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
         <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.text }]}>Computer Engineering</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Year {Math.ceil((completedCredits / totalCredits * 4) || 1)} of 4</Text>
-          </View>
+          <Pressable onPress={handleSwitchMajor} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[styles.greeting, { color: colors.text }]}>{majorLabel}</Text>
+              <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+            </View>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Year {Math.max(1, [0, 1, 2, 3].filter(y => isYearCompleted(y)).length)} of 4</Text>
+          </Pressable>
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -425,18 +415,20 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Smart Tips */}
-        {currentTip !== null && (
-          <View style={[styles.tipCard, { borderLeftColor: TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length], backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <View style={styles.tipContent}>
-              <Ionicons name="bulb-outline" size={18} color={TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length]} />
-              <Text style={[styles.tipText, { color: colors.text }]}>{SMART_TIPS[currentTip]}</Text>
+        {/* Smart Tips: auto-dismissable advice cards */}
+        {
+          currentTip !== null && (
+            <View style={[styles.tipCard, { borderLeftColor: TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length], backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <View style={styles.tipContent}>
+                <Ionicons name="bulb-outline" size={18} color={TIP_BORDER_COLORS[currentTip % TIP_BORDER_COLORS.length]} />
+                <Text style={[styles.tipText, { color: colors.text }]}>{SMART_TIPS[currentTip]}</Text>
+              </View>
+              <Pressable onPress={() => dismissTip(currentTip)} hitSlop={8} style={styles.tipDismiss}>
+                <Ionicons name="close" size={18} color={colors.textMuted} />
+              </Pressable>
             </View>
-            <Pressable onPress={() => dismissTip(currentTip)} hitSlop={8} style={styles.tipDismiss}>
-              <Ionicons name="close" size={18} color={colors.textMuted} />
-            </Pressable>
-          </View>
-        )}
+          )
+        }
 
         {/* Milestone Markers */}
         <View style={styles.section}>
@@ -506,68 +498,72 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {inProgressCourses.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Currently Enrolled</Text>
-            {inProgressCourses.map(course => (
-              <Pressable
-                key={course.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: '/course/[id]', params: { id: course.id } });
-                }}
-                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-              >
-                <View style={[styles.enrolledDot, { backgroundColor: Colors.courseInProgress }]} />
-                <View style={styles.enrolledInfo}>
-                  <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
-                  <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
-                </View>
-                <Text style={styles.enrolledCredits}>{course.credits}cr</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {availableCourses.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Ready to Take</Text>
-              <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{availableCourses.length} courses</Text>
+        {
+          inProgressCourses.length > 0 && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Currently Enrolled</Text>
+              {inProgressCourses.map(course => (
+                <Pressable
+                  key={course.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push({ pathname: '/course/[id]', params: { id: course.id } });
+                  }}
+                  style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                >
+                  <View style={[styles.enrolledDot, { backgroundColor: Colors.courseInProgress }]} />
+                  <View style={styles.enrolledInfo}>
+                    <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
+                    <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
+                  </View>
+                  <Text style={styles.enrolledCredits}>{course.credits}cr</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              ))}
             </View>
-            {availableCourses.slice(0, 5).map(course => (
-              <Pressable
-                key={course.id}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push({ pathname: '/course/[id]', params: { id: course.id } });
-                }}
-                style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-              >
-                <View style={[styles.enrolledDot, { backgroundColor: colors.primary }]} />
-                <View style={styles.enrolledInfo}>
-                  <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
-                  <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
-                </View>
-                <Text style={[styles.enrolledCredits, { color: colors.primary }]}>{course.credits}cr</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-              </Pressable>
-            ))}
-            {availableCourses.length > 5 && (
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push('/map');
-                }}
-                style={styles.seeMoreBtn}
-              >
-                <Text style={styles.seeMoreText}>View all on Map</Text>
-                <Ionicons name="arrow-forward" size={14} color={colors.primary} />
-              </Pressable>
-            )}
-          </View>
-        )}
+          )
+        }
+
+        {
+          availableCourses.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Ready to Take</Text>
+                <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{availableCourses.length} courses</Text>
+              </View>
+              {availableCourses.slice(0, 5).map(course => (
+                <Pressable
+                  key={course.id}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push({ pathname: '/course/[id]', params: { id: course.id } });
+                  }}
+                  style={({ pressed }) => [styles.enrolledCard, { opacity: pressed ? 0.8 : 1, backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                >
+                  <View style={[styles.enrolledDot, { backgroundColor: colors.primary }]} />
+                  <View style={styles.enrolledInfo}>
+                    <Text style={[styles.enrolledCode, { color: colors.textMuted }]}>{course.code}</Text>
+                    <Text style={[styles.enrolledTitle, { color: colors.text }]}>{course.title}</Text>
+                  </View>
+                  <Text style={[styles.enrolledCredits, { color: colors.primary }]}>{course.credits}cr</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              ))}
+              {availableCourses.length > 5 && (
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push('/map');
+                  }}
+                  style={styles.seeMoreBtn}
+                >
+                  <Text style={styles.seeMoreText}>View all on Map</Text>
+                  <Ionicons name="arrow-forward" size={14} color={colors.primary} />
+                </Pressable>
+              )}
+            </View>
+          )
+        }
 
         <Pressable
           onPress={() => {
@@ -592,8 +588,59 @@ export default function DashboardScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </LinearGradient>
         </Pressable>
-      </ScrollView>
-    </View>
+
+        <AppFooter />
+      </ScrollView >
+
+      <BottomSheet
+        visible={majorSheetVisible}
+        onClose={() => setMajorSheetVisible(false)}
+        title="Select Major"
+        subtitle="Your progress is saved for each major separately."
+      >
+        <View style={{ paddingBottom: 20 }}>
+          {[
+            { id: 'CENG', label: 'Computer Engineering', code: 'CENG' },
+            { id: 'EENG', label: 'Electrical Engineering', code: 'EENG' },
+            { id: 'MENG', label: 'Mechanical Engineering', code: 'MENG' },
+          ].map((item) => {
+            const isActive = profile.major === item.id;
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => handleSelectMajor(item.id)}
+                style={({ pressed }) => [
+                  styles.majorItem,
+                  { borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 }
+                ]}
+              >
+                <View style={[
+                  styles.majorIcon,
+                  { backgroundColor: isActive ? colors.primary + '20' : colors.cardBorder + '50' }
+                ]}>
+                  <MaterialCommunityIcons
+                    name={item.id === 'CENG' ? 'laptop' : item.id === 'EENG' ? 'lightning-bolt' : 'cog'}
+                    size={24}
+                    color={isActive ? colors.primary : colors.textMuted}
+                  />
+                </View>
+                <View style={styles.majorItemContent}>
+                  <Text style={[styles.majorTitle, { color: colors.text, fontWeight: isActive ? '700' : '500' }]}>
+                    {item.label}
+                  </Text>
+                  <Text style={[styles.majorSubtitle, { color: colors.textSecondary }]}>
+                    Bachelor of Science
+                  </Text>
+                </View>
+                {isActive && (
+                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </BottomSheet>
+    </View >
   );
 }
 
@@ -674,34 +721,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     ...Platform.select({ web: { outlineStyle: 'none' } }) as any,
   },
-  filterChipsRow: {
-    marginTop: 10,
-    maxHeight: 36,
-  },
-  filterChipsContent: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-  },
-  filterChipActive: {
-    backgroundColor: Colors.primary + '30',
-    borderColor: Colors.primary,
-  },
-  filterChipText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontFamily: 'Inter_500Medium',
-  },
-  filterChipTextActive: {
-    color: Colors.primary,
-  },
+
   searchResults: {
     position: 'absolute' as any,
     top: 90,
@@ -1099,9 +1119,33 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   gradProgressText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     textAlign: 'center' as const,
+  },
+  majorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    gap: 16,
+  },
+  majorIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  majorItemContent: {
+    flex: 1,
+    gap: 2,
+  },
+  majorTitle: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  majorSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
   },
 });

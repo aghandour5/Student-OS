@@ -1,3 +1,10 @@
+/**
+ * Shared database schema and client-side types.
+ *
+ * Uses Drizzle ORM to define PostgreSQL tables. These definitions are used
+ * server-side for DB operations and shared client-side as TypeScript types.
+ * Also contains GPA lookup tables and grade conversion utilities.
+ */
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, real, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -20,6 +27,7 @@ export const courses = pgTable("courses", {
   category: text("category").notNull(),
   year: integer("year").notNull(),
   semester: integer("semester").notNull(),
+  major: text("major").notNull().default("shared"), // 'CENG', 'EENG', or 'shared'
 });
 
 export const prerequisites = pgTable("prerequisites", {
@@ -56,9 +64,11 @@ export type Course = typeof courses.$inferSelect;
 export type Prerequisite = typeof prerequisites.$inferSelect;
 export type Offering = typeof offerings.$inferSelect;
 
+/** Client-side enriched course — base Course + resolved relationship arrays */
 export interface CourseWithPrereqs extends Course {
-  prerequisites: string[];
-  unlocks: string[];
+  prerequisites: string[];  // Course IDs that must be completed before this one
+  unlocks: string[];        // Course IDs that become available after completing this one
+  corequisites: string[];   // Course IDs that should be taken concurrently
 }
 
 export interface SemesterPlan {
@@ -81,17 +91,23 @@ export interface CourseNote {
   note: string;
 }
 
-export interface UserProfile {
-  major: string;
-  campus: string;
-  startYear: number;
+/** Full student profile persisted to AsyncStorage */
+export interface MajorProgress {
   completedCourses: string[];
   inProgressCourses: string[];
   semesterPlans: SemesterPlan[];
   grades: UserGrade[];
+}
+
+export interface UserProfile {
+  major: string;
+  campus: string;
+  startYear: number;
+  progress: Record<string, MajorProgress>;
   notes: CourseNote[];
 }
 
+/** Maps letter grades to their 4.0-scale numeric equivalents */
 export const GRADE_POINTS: Record<string, number> = {
   'A+': 4.0, 'A': 4.0, 'A-': 3.7,
   'B+': 3.3, 'B': 3.0, 'B-': 2.7,
@@ -100,6 +116,7 @@ export const GRADE_POINTS: Record<string, number> = {
   'F': 0.0,
 };
 
+/** Convert a numeric score (0-100) to a letter grade using standard cutoffs */
 export const getLetterGrade = (score: number): string => {
   const normalized = Math.max(0, Math.min(100, score));
   if (normalized >= 93) return 'A';
