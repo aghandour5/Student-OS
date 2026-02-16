@@ -1,34 +1,31 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Platform,
-  ActivityIndicator, Modal, FlatList, Alert, Share
+  ActivityIndicator, FlatList, Alert, Share
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
-import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useTheme } from '@/lib/theme-context';
 import { AppFooter } from '@/components/AppFooter';
 import { useAcademic } from '@/lib/academic-context';
 import type { SemesterPlan, CourseWithPrereqs } from '@shared/schema';
-import type { OfflineOffering } from '@/lib/offline-data';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useConfirm } from '@/lib/confirm-context';
-
-const FALL_SPRING_MAX_CREDITS = 18;
-const SUMMER_MAX_CREDITS = 9;
-
-const getMaxCredits = (season: string) => {
-  return season === 'Summer' ? SUMMER_MAX_CREDITS : FALL_SPRING_MAX_CREDITS;
-};
+import { SemesterCard } from '@/components/SemesterCard';
+import {
+  getMaxCredits,
+  getSeasonOrder,
+  getSemesterCredits
+} from '@/lib/planner-utils';
 
 export default function PlannerScreen() {
   const insets = useSafeAreaInsets();
   const {
-    profile, semesterPlans, completedCourses, inProgressCourses, courses, offerings, isLoading,
+    semesterPlans, completedCourses, inProgressCourses, courses, offerings, isLoading,
     addSemesterPlan, removeSemesterPlan,
     addCourseToSemester, removeCourseFromSemester,
     setSelectedOffering, getOfferingsForCourse,
@@ -122,143 +119,6 @@ export default function PlannerScreen() {
     }));
   };
 
-  const getSeasonOrder = (season: string) => {
-    switch (season) {
-      case 'Spring': return 0;
-      case 'Summer': return 1;
-      case 'Fall': return 2;
-      default: return 3;
-    }
-  };
-
-  const getSemesterCredits = (plan: SemesterPlan) => {
-    return plan.courseIds.reduce((sum, id) => {
-      const course = courseMap.get(id);
-      return sum + (course?.credits ?? 0);
-    }, 0);
-  };
-
-  const parseTime = (t: string): number => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + (m || 0);
-  };
-
-  const getDays = (dayOfWeek: string): string[] => {
-    const map: Record<string, string[]> = {
-      'MWF': ['M', 'W', 'F'], 'TTh': ['T', 'Th'], 'MW': ['M', 'W'],
-      'M': ['M'], 'T': ['T'], 'W': ['W'], 'Th': ['Th'], 'F': ['F'],
-    };
-    return map[dayOfWeek] || [dayOfWeek];
-  };
-
-  const detectConflicts = (plan: SemesterPlan): string[] => {
-    const warnings: string[] = [];
-    const credits = getSemesterCredits(plan);
-
-    // Hard credit cap
-    const maxCredits = getMaxCredits(plan.season);
-    if (credits > maxCredits) {
-      warnings.push(`⚠️ Exceeds limit: ${credits}/${maxCredits} credits`);
-    }
-
-    // Prerequisite checks
-    for (const courseId of plan.courseIds) {
-      if (!arePrereqsMet(courseId) && !completedCourses.includes(courseId)) {
-        const missing = getMissingPrereqs(courseId);
-        const inThisSemester = missing.filter(m => plan.courseIds.includes(m.id));
-        const trulyMissing = missing.filter(m => !plan.courseIds.includes(m.id) && !completedCourses.includes(m.id));
-        if (trulyMissing.length > 0) {
-          const course = courseMap.get(courseId);
-          warnings.push(`${course?.code}: Missing prereqs - ${trulyMissing.map(m => m.code).join(', ')}`);
-        }
-        if (inThisSemester.length > 0) {
-          const course = courseMap.get(courseId);
-          warnings.push(`${course?.code}: Corequisite with ${inThisSemester.map(m => m.code).join(', ')} (same semester)`);
-        }
-      }
-    }
-
-    // Corequisite checks — must be in the same semester or already completed
-    const coreqWarned = new Set<string>();
-    for (const courseId of plan.courseIds) {
-      const course = courseMap.get(courseId);
-      if (!course?.corequisites?.length) continue;
-      for (const coreqId of course.corequisites) {
-        const pairKey = [courseId, coreqId].sort().join('-');
-        if (coreqWarned.has(pairKey)) continue;
-        // Check if coreq is missing from plan and not previously completed
-        if (!plan.courseIds.includes(coreqId) && !completedCourses.includes(coreqId) && !inProgressCourses.includes(coreqId)) {
-          const coreqCourse = courseMap.get(coreqId);
-          warnings.push(`📋 ${course.code}: Missing corequisite ${coreqCourse?.code || coreqId} (must take together)`);
-          coreqWarned.add(pairKey);
-        }
-      }
-    }
-
-    // Time conflict detection
-    if (plan.selectedOfferings) {
-      const selected = Object.entries(plan.selectedOfferings)
-        .map(([cid, oid]) => {
-          const off = offerings.find(o => o.id === oid);
-          return off ? { courseId: cid, offering: off } : null;
-        })
-        .filter(Boolean) as { courseId: string; offering: OfflineOffering }[];
-
-      for (let i = 0; i < selected.length; i++) {
-        for (let j = i + 1; j < selected.length; j++) {
-          const a = selected[i], b = selected[j];
-          const aDays = getDays(a.offering.dayOfWeek);
-          const bDays = getDays(b.offering.dayOfWeek);
-          const sharedDays = aDays.filter(d => bDays.includes(d));
-          if (sharedDays.length > 0) {
-            const aStart = parseTime(a.offering.startTime), aEnd = parseTime(a.offering.endTime);
-            const bStart = parseTime(b.offering.startTime), bEnd = parseTime(b.offering.endTime);
-            if (aStart < bEnd && bStart < aEnd) {
-              const cA = courseMap.get(a.courseId), cB = courseMap.get(b.courseId);
-              warnings.push(`🕐 ${cA?.code} & ${cB?.code}: Time conflict on ${sharedDays.join('/')} ${a.offering.startTime}-${a.offering.endTime}`);
-            }
-          }
-        }
-      }
-    }
-
-    return warnings;
-  };
-
-  // Calculate a difficulty score (1-5) based on course mix and load
-  const getDifficulty = (plan: SemesterPlan): number => {
-    const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
-    if (coursesInPlan.length === 0) return 0;
-
-    // Base: average year level
-    const avgYear = coursesInPlan.reduce((sum, c) => sum + c.year, 0) / coursesInPlan.length;
-    let diff = avgYear;
-
-    // Math-heavy penalty
-    const mathCount = coursesInPlan.filter(c => c.category === 'Mathematics' || (c.category === 'Foundation' && c.code.startsWith('MATH'))).length;
-    if (mathCount >= 3) diff += 1.5;
-    else if (mathCount >= 2) diff += 0.5;
-
-    // STEM-heavy penalty
-    const stemCats = ['Electrical Engineering', 'Computer Engineering', 'Computer Science'];
-    const stemCount = coursesInPlan.filter(c => stemCats.includes(c.category)).length;
-    if (stemCount >= 4) diff += 1;
-
-    // Lab-heavy penalty
-    const labCount = coursesInPlan.filter(c => c.credits === 1).length;
-    if (labCount >= 3) diff += 0.5;
-
-    // Credit load factor 
-    const credits = getSemesterCredits(plan);
-    const maxCredits = getMaxCredits(plan.season);
-    const heavyLoad = plan.season === 'Summer' ? 7 : 16;
-
-    if (credits > maxCredits) diff += 1.5;
-    else if (credits >= heavyLoad) diff += 0.5;
-
-    return Math.min(5, Math.max(1, Math.round(diff)));
-  };
-
   const handleCreateSemester = (season: 'Fall' | 'Spring' | 'Summer', year: number) => {
     const id = Crypto.randomUUID();
     addSemesterPlan({
@@ -286,9 +146,7 @@ export default function PlannerScreen() {
     setShowAddCourse(null);
   }, []);
 
-
-
-  const handleRemoveSemester = async (planId: string) => {
+  const handleRemoveSemester = useCallback(async (planId: string) => {
     if (await confirm({
       title: 'Remove Semester',
       message: 'Are you sure you want to remove this semester plan?',
@@ -298,7 +156,22 @@ export default function PlannerScreen() {
       removeSemesterPlan(planId);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
-  };
+  }, [confirm, removeSemesterPlan]);
+
+  const handleToggleExpand = useCallback((planId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpandedSemester(prev => prev === planId ? null : planId);
+  }, []);
+
+  const handleAddCourse = useCallback((planId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowAddCourse(planId);
+  }, []);
+
+  const handleSelectSection = useCallback((planId: string, courseId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowSelectSection({ planId, courseId });
+  }, []);
 
   if (isLoading) {
     return (
@@ -328,7 +201,7 @@ export default function PlannerScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 const lines: string[] = ['UniFlow - Semester Plan\n'];
                 sortedPlans.forEach(plan => {
-                  const credits = getSemesterCredits(plan);
+                  const credits = getSemesterCredits(plan, courseMap);
                   lines.push(`${plan.name} (${credits} credits)`);
                   plan.courseIds.forEach(id => {
                     const course = courseMap.get(id);
@@ -338,12 +211,12 @@ export default function PlannerScreen() {
                   });
                   lines.push('');
                 });
-                const totalCredits = sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0);
+                const totalCredits = sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p, courseMap), 0);
                 lines.push(`Total: ${totalCredits} credits across ${sortedPlans.length} semester(s)`);
                 const text = lines.join('\n');
                 try {
                   await Share.share({ message: text });
-                } catch (e) {
+                } catch {
                   if (typeof navigator !== 'undefined' && navigator.clipboard) {
                     await navigator.clipboard.writeText(text);
                     Alert.alert('Copied', 'Plan copied to clipboard');
@@ -385,7 +258,7 @@ export default function PlannerScreen() {
           <View style={[styles.creditSummary, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.creditSummaryItem}>
               <Text style={[styles.creditSummaryValue, { color: colors.text }]}>
-                {sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0)}
+                {sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p, courseMap), 0)}
               </Text>
               <Text style={[styles.creditSummaryLabel, { color: colors.textSecondary }]}>Total Planned</Text>
             </View>
@@ -397,7 +270,7 @@ export default function PlannerScreen() {
             <View style={[styles.creditSummaryDivider, { backgroundColor: colors.cardBorder }]} />
             <View style={styles.creditSummaryItem}>
               <Text style={[styles.creditSummaryValue, { color: Colors.primary }]}>
-                {sortedPlans.length > 0 ? Math.round(sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p), 0) / sortedPlans.length) : 0}
+                {sortedPlans.length > 0 ? Math.round(sortedPlans.reduce((sum, p) => sum + getSemesterCredits(p, courseMap), 0) / sortedPlans.length) : 0}
               </Text>
               <Text style={[styles.creditSummaryLabel, { color: colors.textSecondary }]}>Avg/Semester</Text>
             </View>
@@ -414,246 +287,25 @@ export default function PlannerScreen() {
           </View>
         )}
 
-        {sortedPlans.map(plan => {
-          const credits = getSemesterCredits(plan);
-          const warnings = detectConflicts(plan);
-          const isExpanded = expandedSemester === plan.id;
-
-          return (
-            <View key={plan.id} style={[styles.semesterCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setExpandedSemester(isExpanded ? null : plan.id);
-                }}
-                style={styles.semesterHeader}
-                accessibilityRole="button"
-                accessibilityLabel={`${plan.name}, ${plan.courseIds.length} courses, ${credits} credits`}
-                accessibilityHint={isExpanded ? "Double tap to collapse" : "Double tap to expand"}
-                accessibilityState={{ expanded: isExpanded }}
-              >
-                <View style={styles.semesterInfo}>
-                  <View style={[styles.seasonBadge, {
-                    backgroundColor: plan.season === 'Fall' ? '#F59E0B20' :
-                      plan.season === 'Spring' ? '#10B98120' : '#EF444420'
-                  }]}>
-                    <Ionicons
-                      name={plan.season === 'Fall' ? 'leaf' : plan.season === 'Spring' ? 'flower' : 'sunny'}
-                      size={14}
-                      color={plan.season === 'Fall' ? '#F59E0B' :
-                        plan.season === 'Spring' ? '#10B981' : '#EF4444'}
-                    />
-                  </View>
-                  <View>
-                    <Text style={[styles.semesterName, { color: colors.text }]}>{plan.name}</Text>
-                    <Text style={[styles.semesterMeta, { color: colors.textSecondary }]}>
-                      {plan.courseIds.length} course{plan.courseIds.length !== 1 ? 's' : ''} · <Text style={{ color: credits > getMaxCredits(plan.season) ? Colors.danger : credits > (plan.season === 'Summer' ? 6 : 15) ? Colors.warning : colors.textSecondary, fontWeight: credits > (plan.season === 'Summer' ? 6 : 15) ? '700' : '400' }}>{credits}/{getMaxCredits(plan.season)} credits</Text>
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.semesterActions}>
-                  {warnings.length > 0 && (
-                    <View style={styles.warningBadge}>
-                      <Ionicons name="warning" size={14} color={Colors.warning} />
-                    </View>
-                  )}
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={18}
-                    color={colors.textMuted}
-                  />
-                </View>
-              </Pressable>
-
-              {isExpanded && (
-                <View style={[styles.semesterBody, { borderTopColor: colors.cardBorder }]}>
-                  {(() => {
-                    const maxCredits = getMaxCredits(plan.season);
-                    const heavyLoad = plan.season === 'Summer' ? 7 : 15;
-                    // Lower threshold for "Light load" in summer (e.g., < 4) or keep simple?
-                    // Let's scale it slightly: < 15/18 is ~83%. < 7/9 is ~77%. 
-                    const lightLoad = plan.season === 'Summer' ? 4 : 15;
-
-                    const creditColor = credits < lightLoad ? '#10B981' : credits <= maxCredits ? '#0EA5E9' : '#EF4444';
-                    const creditLabel = credits < lightLoad ? 'Light load' : credits <= maxCredits ? 'Normal load' : 'Over limit!';
-
-                    const difficulty = getDifficulty(plan);
-
-                    const coursesInPlan = plan.courseIds.map(id => courseMap.get(id)).filter(Boolean) as CourseWithPrereqs[];
-                    const coursesWithPrereqs = coursesInPlan.filter(c => c.prerequisites.length > 0);
-                    const coursesWithMetPrereqs = coursesWithPrereqs.filter(c =>
-                      arePrereqsMet(c.id) || completedCourses.includes(c.id)
-                    );
-                    const allMet = coursesWithPrereqs.length === 0 || coursesWithMetPrereqs.length === coursesWithPrereqs.length;
-                    const unmetCount = coursesWithPrereqs.length - coursesWithMetPrereqs.length;
-
-                    return (
-                      <View style={[styles.summaryCard, { backgroundColor: colors.backgroundTertiary, borderColor: colors.cardBorder }]}>
-                        <View style={styles.summaryRow}>
-                          <View style={styles.summaryItem}>
-                            <View style={[styles.summaryIconWrap, { backgroundColor: creditColor + '20' }]}>
-                              <Ionicons name="school-outline" size={16} color={creditColor} />
-                            </View>
-                            <Text style={[styles.summaryValue, { color: creditColor }]}>{credits}</Text>
-                            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{creditLabel}</Text>
-                          </View>
-
-                          <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />
-
-                          <View style={styles.summaryItem}>
-                            <View style={[styles.summaryIconWrap, { backgroundColor: '#A855F720' }]}>
-                              <Ionicons name="speedometer-outline" size={16} color="#A855F7" />
-                            </View>
-                            <View style={styles.difficultyDots}>
-                              {[1, 2, 3, 4, 5].map(dot => (
-                                <View
-                                  key={dot}
-                                  style={[
-                                    styles.difficultyDot,
-                                    { backgroundColor: dot <= difficulty ? '#A855F7' : colors.cardBorder },
-                                  ]}
-                                />
-                              ))}
-                            </View>
-                            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Difficulty</Text>
-                          </View>
-
-                          <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />
-
-                          <View style={styles.summaryItem}>
-                            {allMet ? (
-                              <>
-                                <View style={[styles.summaryIconWrap, { backgroundColor: '#10B98120' }]}>
-                                  <Ionicons name="checkmark-circle-outline" size={16} color="#10B981" />
-                                </View>
-                                <Text style={[styles.summaryValue, { color: '#10B981', fontSize: 11 }]}>All met</Text>
-                                <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Prerequisites</Text>
-                              </>
-                            ) : (
-                              <>
-                                <View style={[styles.summaryIconWrap, { backgroundColor: '#F59E0B20' }]}>
-                                  <Ionicons name="warning-outline" size={16} color="#F59E0B" />
-                                </View>
-                                <Text style={[styles.summaryValue, { color: '#F59E0B', fontSize: 11 }]}>
-                                  {unmetCount}/{coursesWithPrereqs.length}
-                                </Text>
-                                <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Unmet prereqs</Text>
-                              </>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })()}
-
-                  {warnings.length > 0 && (
-                    <View style={styles.warningsContainer}>
-                      {warnings.map((w, i) => (
-                        <View key={i} style={styles.warningRow}>
-                          <Ionicons name="alert-circle" size={14} color={Colors.warning} />
-                          <Text style={styles.warningText}>{w}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {plan.courseIds.map(courseId => {
-                    const course = courseMap.get(courseId);
-                    if (!course) return null;
-                    const status = getCourseStatus(courseId);
-                    const selectedOfferingId = plan.selectedOfferings?.[courseId];
-                    const selectedOffering = selectedOfferingId ? offerings.find(o => o.id === selectedOfferingId) : null;
-                    return (
-                      <View key={courseId} style={[styles.plannedCourse, { borderBottomColor: colors.cardBorder + '50' }]}>
-                        <View style={{ flex: 1 }}>
-                          <Pressable
-                            onPress={() => {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              router.push({ pathname: '/course/[id]', params: { id: courseId } });
-                            }}
-                            style={styles.plannedCourseInfo}
-                          >
-                            <View style={[styles.courseDot, {
-                              backgroundColor: status === 'completed' ? Colors.courseCompleted :
-                                status === 'in_progress' ? Colors.courseInProgress : Colors.primary
-                            }]} />
-                            <View style={styles.courseTextContainer}>
-                              <Text style={[styles.courseCode, { color: colors.textMuted }]}>{course.code}</Text>
-                              <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
-                            </View>
-                            <Text style={[styles.courseCredits, { color: colors.primary }]}>{course.credits}cr</Text>
-                          </Pressable>
-                          {selectedOffering ? (
-                            <Pressable
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                setShowSelectSection({ planId: plan.id, courseId });
-                              }}
-                              style={[styles.offeringInfo, { backgroundColor: colors.backgroundTertiary }]}
-                            >
-                              <Ionicons name="person-outline" size={11} color={colors.textMuted} />
-                              <Text style={[styles.offeringText, { color: colors.textSecondary }]} numberOfLines={1}>
-                                {selectedOffering.instructor} · Sec {selectedOffering.section} · {selectedOffering.dayOfWeek} {selectedOffering.startTime}-{selectedOffering.endTime} · {selectedOffering.room}
-                              </Text>
-                              <Ionicons name="swap-horizontal" size={12} color={colors.textMuted} />
-                            </Pressable>
-                          ) : (
-                            <Pressable
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                setShowSelectSection({ planId: plan.id, courseId });
-                              }}
-                              style={[styles.offeringInfo, { backgroundColor: Colors.primary + '10', borderWidth: 1, borderColor: Colors.primary + '30', borderStyle: 'dashed' }]}
-                            >
-                              <Ionicons name="time-outline" size={11} color={Colors.primary} />
-                              <Text style={[styles.offeringText, { color: Colors.primary, fontWeight: '500' }]}>Select section</Text>
-                            </Pressable>
-                          )}
-                        </View>
-                        <Pressable
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            removeCourseFromSemester(plan.id, courseId);
-                          }}
-                          style={{ paddingLeft: 8, alignSelf: 'flex-start', paddingTop: 4 }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Remove ${course.code}`}
-                          accessibilityHint="Removes this course from the semester"
-                        >
-                          <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-                        </Pressable>
-                      </View>
-                    );
-                  })}
-
-                  <View style={styles.semesterFooter}>
-                    <Pressable
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        setShowAddCourse(plan.id);
-                      }}
-                      style={styles.addCourseBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="Add course"
-                      accessibilityHint={`Adds a course to ${plan.name}`}
-                    >
-                      <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
-                      <Text style={styles.addCourseText}>Add Course</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleRemoveSemester(plan.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${plan.name} semester`}
-                      accessibilityHint="Deletes this semester plan"
-                    >
-                      <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-                    </Pressable>
-                  </View>
-                </View>
-              )}
-            </View>
-          );
-        })}
+        {sortedPlans.map(plan => (
+          <SemesterCard
+            key={plan.id}
+            plan={plan}
+            isExpanded={expandedSemester === plan.id}
+            onToggleExpand={handleToggleExpand}
+            onRemove={handleRemoveSemester}
+            onAddCourse={handleAddCourse}
+            onRemoveCourse={removeCourseFromSemester}
+            onSelectSection={handleSelectSection}
+            courseMap={courseMap}
+            offerings={offerings}
+            completedCourses={completedCourses}
+            inProgressCourses={inProgressCourses}
+            arePrereqsMet={arePrereqsMet}
+            getCourseStatus={getCourseStatus}
+            getMissingPrereqs={getMissingPrereqs}
+          />
+        ))}
 
         <AppFooter />
       </ScrollView>
@@ -708,7 +360,7 @@ export default function PlannerScreen() {
           if (!showAddCourse) return undefined;
           const plan = semesterPlans.find(p => p.id === showAddCourse);
           if (!plan) return undefined;
-          const used = getSemesterCredits(plan);
+          const used = getSemesterCredits(plan, courseMap);
           const max = getMaxCredits(plan.season);
           const remaining = max - used;
           return remaining > 0 ? `${remaining} credits remaining` : 'Credit limit reached';
@@ -716,7 +368,7 @@ export default function PlannerScreen() {
       >
         {showAddCourse && (() => {
           const currentPlan = semesterPlans.find(p => p.id === showAddCourse);
-          const currentCredits = currentPlan ? getSemesterCredits(currentPlan) : 0;
+          const currentCredits = currentPlan ? getSemesterCredits(currentPlan, courseMap) : 0;
           const maxCredits = currentPlan ? getMaxCredits(currentPlan.season) : 18;
           const remainingCredits = maxCredits - currentCredits;
           return (
@@ -931,138 +583,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 40,
   },
-  semesterCard: {
+  creditSummary: {
+    flexDirection: 'row',
     backgroundColor: Colors.card,
-    borderRadius: 16,
-    marginBottom: 12,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
-    overflow: 'hidden',
-  },
-  semesterHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
   },
-  semesterInfo: {
-    flexDirection: 'row',
+  creditSummaryItem: {
+    flex: 1,
     alignItems: 'center',
-    gap: 12,
   },
-  seasonBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  creditSummaryDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: Colors.cardBorder,
   },
-  semesterName: {
-    fontSize: 15,
-    fontWeight: '600' as const,
+  creditSummaryValue: {
+    fontSize: 20,
+    fontWeight: '700' as const,
     color: Colors.text,
-    fontFamily: 'Inter_600SemiBold',
+    fontFamily: 'Inter_700Bold',
   },
-  semesterMeta: {
-    fontSize: 12,
+  creditSummaryLabel: {
+    fontSize: 11,
     color: Colors.textSecondary,
     fontFamily: 'Inter_400Regular',
     marginTop: 2,
-  },
-  semesterActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  warningBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.warning + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  semesterBody: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.cardBorder,
-    padding: 16,
-    paddingTop: 12,
-  },
-  warningsContainer: {
-    backgroundColor: Colors.warning + '10',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
-    gap: 6,
-  },
-  warningRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  warningText: {
-    fontSize: 12,
-    color: Colors.warning,
-    fontFamily: 'Inter_400Regular',
-    flex: 1,
-    lineHeight: 16,
-  },
-  plannedCourse: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.cardBorder + '50',
-  },
-  plannedCourseInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  courseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  courseTextContainer: {
-    flex: 1,
-  },
-  courseCode: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.5,
-  },
-  courseTitle: {
-    fontSize: 13,
-    color: Colors.text,
-    fontFamily: 'Inter_500Medium',
-  },
-  courseCredits: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.primary,
-    fontFamily: 'Inter_600SemiBold',
-    marginRight: 8,
-  },
-  semesterFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  addCourseBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  addCourseText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: Colors.primary,
-    fontFamily: 'Inter_600SemiBold',
   },
   modalOverlay: {
     flex: 1,
@@ -1189,19 +739,6 @@ const styles = StyleSheet.create({
     color: Colors.courseLocked,
     fontFamily: 'Inter_400Regular',
   },
-  summaryCard: {
-    backgroundColor: Colors.backgroundTertiary,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   recommendedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1214,89 +751,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     fontFamily: 'Inter_600SemiBold',
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  summaryIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryValue: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    fontFamily: 'Inter_700Bold',
-  },
-  summaryLabel: {
-    fontSize: 10,
-    color: Colors.textMuted,
-    fontFamily: 'Inter_400Regular',
-  },
-  summaryDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: Colors.cardBorder,
-  },
-  difficultyDots: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 2,
-  },
-  difficultyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  creditSummary: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    alignItems: 'center',
-  },
-  creditSummaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  creditSummaryDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: Colors.cardBorder,
-  },
-  creditSummaryValue: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.text,
-    fontFamily: 'Inter_700Bold',
-  },
-  creditSummaryLabel: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    fontFamily: 'Inter_400Regular',
-    marginTop: 2,
-  },
-  offeringInfo: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 5,
-    marginLeft: 20,
-    marginTop: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  offeringText: {
-    fontSize: 10,
-    fontFamily: 'Inter_400Regular',
-    flex: 1,
   },
   creditCapBanner: {
     flexDirection: 'row' as const,
