@@ -22,6 +22,8 @@ export interface IStorage {
 
 export class FirebaseStorage implements IStorage {
   private db: any;
+  private coursesCache: { data: CourseWithPrereqs[], timestamp: number } | null = null;
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor(firestoreInstance: any = db) {
     this.db = firestoreInstance;
@@ -89,6 +91,10 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getCoursesWithPrereqs(): Promise<CourseWithPrereqs[]> {
+    if (this.coursesCache && Date.now() - this.coursesCache.timestamp < this.CACHE_TTL) {
+      return this.coursesCache.data;
+    }
+
     const allCourses = await this.getAllCourses();
     const allPrereqs = await this.getAllPrerequisites();
 
@@ -104,12 +110,15 @@ export class FirebaseStorage implements IStorage {
       unlocksMap.get(p.requiresCourseId)!.push(p.courseId);
     }
 
-    return allCourses.map(course => ({
+    const result = allCourses.map(course => ({
       ...course,
       prerequisites: prereqMap.get(course.id) || [],
       unlocks: unlocksMap.get(course.id) || [],
       corequisites: [],
     }));
+
+    this.coursesCache = { data: result, timestamp: Date.now() };
+    return result;
   }
 
   async seedData(): Promise<void> {
