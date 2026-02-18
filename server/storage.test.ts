@@ -67,4 +67,35 @@ describe("FirebaseStorage", () => {
     expect(mockWhere).toHaveBeenCalledWith("requiresCourseId", "==", courseId);
     expect(mockGet).toHaveBeenCalled();
   });
+
+  test("getAllCourses should cache results", async () => {
+    // Setup a specific mock for this test to avoid sort errors
+    const mockGetCourses = mock(() => Promise.resolve({
+      docs: [
+        { data: () => ({ id: "c1", year: 2023, semester: 1 }) }
+      ]
+    }));
+
+    const mockCollectionCourses = mock((name) => ({
+      get: mockGetCourses
+    }));
+
+    const mockDbCourses = {
+      collection: mockCollectionCourses,
+      batch: mock(() => ({ set: mock(), commit: mock() }))
+    };
+
+    const storageCourses = new FirebaseStorage(mockDbCourses);
+
+    // First call - should hit DB
+    await storageCourses.getAllCourses();
+
+    // Second call - should hit cache
+    await storageCourses.getAllCourses();
+
+    // Verify collection was accessed only once (for "courses")
+    // Note: If implementation is correct, it should be called once.
+    // If not, it will be called twice.
+    expect(mockCollectionCourses).toHaveBeenCalledTimes(1);
+  });
 });

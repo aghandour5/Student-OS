@@ -22,9 +22,22 @@ export interface IStorage {
 
 export class FirebaseStorage implements IStorage {
   private db: any;
+  private cache: Map<string, { data: any, timestamp: number }> = new Map();
+  private CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor(firestoreInstance: any = db) {
     this.db = firestoreInstance;
+  }
+
+  private async getCached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const cached = this.cache.get(key);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp < this.CACHE_TTL)) {
+      return cached.data as T;
+    }
+    const data = await fetcher();
+    this.cache.set(key, { data, timestamp: now });
+    return data;
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -46,11 +59,13 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllCourses(): Promise<Course[]> {
-    const snapshot = await this.db.collection("courses").get();
-    const courses = snapshot.docs.map(doc => doc.data() as Course);
-    return courses.sort((a, b) => {
-      if (a.year !== b.year) return a.year - b.year;
-      return a.semester - b.semester;
+    return this.getCached("courses", async () => {
+      const snapshot = await this.db.collection("courses").get();
+      const courses = snapshot.docs.map(doc => doc.data() as Course);
+      return courses.sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year;
+        return a.semester - b.semester;
+      });
     });
   }
 
@@ -60,8 +75,10 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllPrerequisites(): Promise<Prerequisite[]> {
-    const snapshot = await this.db.collection("prerequisites").get();
-    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    return this.getCached("prerequisites", async () => {
+      const snapshot = await this.db.collection("prerequisites").get();
+      return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    });
   }
 
   async getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
@@ -79,8 +96,10 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllOfferings(): Promise<Offering[]> {
-    const snapshot = await this.db.collection("offerings").get();
-    return snapshot.docs.map(doc => doc.data() as Offering);
+    return this.getCached("offerings", async () => {
+      const snapshot = await this.db.collection("offerings").get();
+      return snapshot.docs.map(doc => doc.data() as Offering);
+    });
   }
 
   async getOfferingsForCourse(courseId: string): Promise<Offering[]> {
