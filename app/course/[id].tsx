@@ -30,7 +30,7 @@ export default function CourseDetailScreen() {
   const {
     courses, getCourseStatus, getPrerequisitesFor, getUnlockedBy,
     getMissingPrereqs, toggleCourseCompleted, toggleCourseInProgress,
-    arePrereqsMet, profile, grades, setCourseNote, getCourseNote, getPrerequisiteChain,
+    grades, setCourseNote, getCourseNote, getPrerequisiteChain,
   } = useAcademic();
   const { colors } = useTheme();
   const webTopInset = Platform.OS === 'web' ? 67 : 0;
@@ -49,16 +49,19 @@ export default function CourseDetailScreen() {
   });
 
   const course = useMemo(() => courses.find(c => c.id === id), [courses, id]);
-  const status = course ? getCourseStatus(course.id) : 'locked';
+
+  const status = useMemo(() => course ? getCourseStatus(course.id) : 'locked', [course, getCourseStatus]);
   const config = statusConfig[status];
-  const prereqs = course ? getPrerequisitesFor(course.id) : [];
-  const unlocks = course ? getUnlockedBy(course.id) : [];
-  const missingPrereqs = course ? getMissingPrereqs(course.id) : [];
-  const offerings: Offering[] = courseDetail?.offerings || [];
-  const grade = grades.find(g => g.courseId === id);
+
+  const prereqs = useMemo(() => course ? getPrerequisitesFor(course.id) : [], [course, getPrerequisitesFor]);
+  const unlocks = useMemo(() => course ? getUnlockedBy(course.id) : [], [course, getUnlockedBy]);
+  const missingPrereqs = useMemo(() => course ? getMissingPrereqs(course.id) : [], [course, getMissingPrereqs]);
+
+  const offerings: Offering[] = useMemo(() => courseDetail?.offerings || [], [courseDetail]);
+  const grade = useMemo(() => grades.find(g => g.courseId === id), [grades, id]);
 
   const courseId = id!;
-  const chain = getPrerequisiteChain(courseId);
+  const chain = useMemo(() => getPrerequisiteChain(courseId), [getPrerequisiteChain, courseId]);
   const [noteText, setNoteText] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
