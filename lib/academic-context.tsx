@@ -18,6 +18,7 @@ import {
 import { offlineCourses, offlineOfferings, type OfflineOffering } from './offline-data';
 import { getApiUrl } from './query-client';
 import { useAuth } from './auth-context';
+import { computePrerequisiteChain } from './academic-utils';
 
 // AsyncStorage key for persisted student profile
 const STORAGE_KEY = '@uniflow_user_profile';
@@ -582,6 +583,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     return profile.notes?.find(n => n.courseId === courseId)?.note ?? '';
   }, [profile.notes]);
 
+  const completedCourses = profile.progress[profile.major]?.completedCourses;
+
   /**
    * Build the full prerequisite chain for a course using BFS.
    * Returns an array of levels — level 0 is the furthest-back prerequisites,
@@ -589,44 +592,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
    * Only includes courses the student has NOT yet completed.
    */
   const getPrerequisiteChain = useCallback((courseId: string): CourseWithPrereqs[][] => {
-    const chain: CourseWithPrereqs[][] = [];
-    let currentLevel = [courseId];
-    const visited = new Set<string>();
-    const currentProgress = profile.progress[profile.major];
-
-    while (currentLevel.length > 0) {
-      const nextLevel: string[] = [];
-      const levelCourses: CourseWithPrereqs[] = [];
-
-      for (const id of currentLevel) {
-        if (visited.has(id)) continue;
-        visited.add(id);
-        const course = courseMap.get(id);
-        if (!course) continue;
-
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
-        if (missingPrereqs.length > 0) {
-          for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
-              const prereqCourse = courseMap.get(pid);
-              if (prereqCourse) {
-                levelCourses.push(prereqCourse);
-                nextLevel.push(pid);
-              }
-            }
-          }
-        }
-      }
-
-      if (levelCourses.length > 0) {
-        chain.push(levelCourses);
-      }
-      currentLevel = nextLevel;
-    }
-
-    // Reverse so that the earliest prerequisites appear first
-    return chain.reverse();
-  }, [courseMap, profile]);
+    return computePrerequisiteChain(courseId, courseMap, completedCourses);
+  }, [courseMap, completedCourses]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
