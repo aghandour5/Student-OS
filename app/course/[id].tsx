@@ -58,7 +58,7 @@ export default function CourseDetailScreen() {
   const grade = grades.find(g => g.courseId === id);
 
   const courseId = id!;
-  const chain = getPrerequisiteChain(courseId);
+  const chain = useMemo(() => getPrerequisiteChain(courseId), [getPrerequisiteChain, courseId]);
   const [noteText, setNoteText] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
