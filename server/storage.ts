@@ -20,8 +20,21 @@ export interface IStorage {
   seedData(): Promise<void>;
 }
 
+type CacheEntry<T> = {
+  data: T;
+  timestamp: number;
+};
+
 export class FirebaseStorage implements IStorage {
   private db: any;
+  private cache: {
+    courses?: CacheEntry<Course[]>;
+    prerequisites?: CacheEntry<Prerequisite[]>;
+    offerings?: CacheEntry<Offering[]>;
+  } = {};
+
+  // Cache TTL: 5 minutes
+  private readonly CACHE_TTL = 5 * 60 * 1000;
 
   constructor(firestoreInstance: any = db) {
     this.db = firestoreInstance;
@@ -46,12 +59,20 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllCourses(): Promise<Course[]> {
+    const now = Date.now();
+    if (this.cache.courses && (now - this.cache.courses.timestamp < this.CACHE_TTL)) {
+      return this.cache.courses.data;
+    }
+
     const snapshot = await this.db.collection("courses").get();
     const courses = snapshot.docs.map(doc => doc.data() as Course);
-    return courses.sort((a, b) => {
+    const sortedCourses = courses.sort((a, b) => {
       if (a.year !== b.year) return a.year - b.year;
       return a.semester - b.semester;
     });
+
+    this.cache.courses = { data: sortedCourses, timestamp: now };
+    return sortedCourses;
   }
 
   async getCourse(id: string): Promise<Course | undefined> {
@@ -60,8 +81,16 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllPrerequisites(): Promise<Prerequisite[]> {
+    const now = Date.now();
+    if (this.cache.prerequisites && (now - this.cache.prerequisites.timestamp < this.CACHE_TTL)) {
+      return this.cache.prerequisites.data;
+    }
+
     const snapshot = await this.db.collection("prerequisites").get();
-    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    const prereqs = snapshot.docs.map(doc => doc.data() as Prerequisite);
+
+    this.cache.prerequisites = { data: prereqs, timestamp: now };
+    return prereqs;
   }
 
   async getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
@@ -79,8 +108,16 @@ export class FirebaseStorage implements IStorage {
   }
 
   async getAllOfferings(): Promise<Offering[]> {
+    const now = Date.now();
+    if (this.cache.offerings && (now - this.cache.offerings.timestamp < this.CACHE_TTL)) {
+      return this.cache.offerings.data;
+    }
+
     const snapshot = await this.db.collection("offerings").get();
-    return snapshot.docs.map(doc => doc.data() as Offering);
+    const offerings = snapshot.docs.map(doc => doc.data() as Offering);
+
+    this.cache.offerings = { data: offerings, timestamp: now };
+    return offerings;
   }
 
   async getOfferingsForCourse(courseId: string): Promise<Offering[]> {
@@ -178,6 +215,9 @@ export class FirebaseStorage implements IStorage {
 
     await Promise.all(commits);
     console.log(`Seeded ${seedCourses.length} courses, ${seedPrerequisites.length} prerequisites, ${seedOfferings.length} offerings`);
+
+    // Clear cache after seeding to ensure we have fresh data
+    this.cache = {};
   }
 }
 
