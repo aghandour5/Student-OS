@@ -434,14 +434,14 @@ export default function PlannerScreen() {
               >
                 <View style={styles.semesterInfo}>
                   <View style={[styles.seasonBadge, {
-                    backgroundColor: plan.season === 'Fall' ? '#F59E0B20' :
-                      plan.season === 'Spring' ? '#10B98120' : '#EF444420'
+                    backgroundColor: plan.season === 'Fall' ? Colors.warning + '20' :
+                      plan.season === 'Spring' ? Colors.courseCompleted + '20' : Colors.danger + '20'
                   }]}>
                     <Ionicons
                       name={plan.season === 'Fall' ? 'leaf' : plan.season === 'Spring' ? 'flower' : 'sunny'}
                       size={14}
-                      color={plan.season === 'Fall' ? '#F59E0B' :
-                        plan.season === 'Spring' ? '#10B981' : '#EF4444'}
+                      color={plan.season === 'Fall' ? Colors.warning :
+                        plan.season === 'Spring' ? Colors.courseCompleted : Colors.danger}
                     />
                   </View>
                   <View>
@@ -474,7 +474,7 @@ export default function PlannerScreen() {
                     // Let's scale it slightly: < 15/18 is ~83%. < 7/9 is ~77%. 
                     const lightLoad = plan.season === 'Summer' ? 4 : 15;
 
-                    const creditColor = credits < lightLoad ? '#10B981' : credits <= maxCredits ? '#0EA5E9' : '#EF4444';
+                    const creditColor = credits < lightLoad ? Colors.courseCompleted : credits <= maxCredits ? colors.primary : Colors.danger;
                     const creditLabel = credits < lightLoad ? 'Light load' : credits <= maxCredits ? 'Normal load' : 'Over limit!';
 
                     const difficulty = getDifficulty(plan);
@@ -501,8 +501,8 @@ export default function PlannerScreen() {
                           <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />
 
                           <View style={styles.summaryItem}>
-                            <View style={[styles.summaryIconWrap, { backgroundColor: '#A855F720' }]}>
-                              <Ionicons name="speedometer-outline" size={16} color="#A855F7" />
+                            <View style={[styles.summaryIconWrap, { backgroundColor: Colors.accent + '20' }]}>
+                              <Ionicons name="speedometer-outline" size={16} color={Colors.accent} />
                             </View>
                             <View style={styles.difficultyDots}>
                               {[1, 2, 3, 4, 5].map(dot => (
@@ -510,7 +510,7 @@ export default function PlannerScreen() {
                                   key={dot}
                                   style={[
                                     styles.difficultyDot,
-                                    { backgroundColor: dot <= difficulty ? '#A855F7' : colors.cardBorder },
+                                    { backgroundColor: dot <= difficulty ? Colors.accent : colors.cardBorder },
                                   ]}
                                 />
                               ))}
@@ -523,18 +523,18 @@ export default function PlannerScreen() {
                           <View style={styles.summaryItem}>
                             {allMet ? (
                               <>
-                                <View style={[styles.summaryIconWrap, { backgroundColor: '#10B98120' }]}>
-                                  <Ionicons name="checkmark-circle-outline" size={16} color="#10B981" />
+                                <View style={[styles.summaryIconWrap, { backgroundColor: Colors.courseCompleted + '20' }]}>
+                                  <Ionicons name="checkmark-circle-outline" size={16} color={Colors.courseCompleted} />
                                 </View>
-                                <Text style={[styles.summaryValue, { color: '#10B981', fontSize: 11 }]}>All met</Text>
+                                <Text style={[styles.summaryValue, { color: Colors.courseCompleted, fontSize: 11 }]}>All met</Text>
                                 <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Prerequisites</Text>
                               </>
                             ) : (
                               <>
-                                <View style={[styles.summaryIconWrap, { backgroundColor: '#F59E0B20' }]}>
-                                  <Ionicons name="warning-outline" size={16} color="#F59E0B" />
+                                <View style={[styles.summaryIconWrap, { backgroundColor: Colors.warning + '20' }]}>
+                                  <Ionicons name="warning-outline" size={16} color={Colors.warning} />
                                 </View>
-                                <Text style={[styles.summaryValue, { color: '#F59E0B', fontSize: 11 }]}>
+                                <Text style={[styles.summaryValue, { color: Colors.warning, fontSize: 11 }]}>
                                   {unmetCount}/{coursesWithPrereqs.length}
                                 </Text>
                                 <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Unmet prereqs</Text>
@@ -548,12 +548,18 @@ export default function PlannerScreen() {
 
                   {warnings.length > 0 && (
                     <View style={styles.warningsContainer}>
-                      {warnings.map((w, i) => (
-                        <View key={i} style={styles.warningRow}>
-                          <Ionicons name="alert-circle" size={14} color={Colors.warning} />
-                          <Text style={styles.warningText}>{w}</Text>
-                        </View>
-                      ))}
+                      {warnings.map((w, i) => {
+                        const isError = w.toLowerCase().includes('exceeds') || w.toLowerCase().includes('conflict');
+                        const alertColor = isError ? Colors.danger : Colors.warning;
+                        return (
+                          <View key={i} style={[styles.warningRow, { backgroundColor: alertColor + '15', borderColor: alertColor + '40' }]}>
+                            <View style={[styles.warningIconWrap, { backgroundColor: alertColor + '20' }]}>
+                              <Ionicons name={isError ? "alert-circle" : "warning"} size={14} color={alertColor} />
+                            </View>
+                            <Text style={[styles.warningText, { color: alertColor }]}>{w}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
 
@@ -685,8 +691,8 @@ export default function PlannerScreen() {
                       <Ionicons
                         name={season === 'Fall' ? 'leaf' : season === 'Spring' ? 'flower' : 'sunny'}
                         size={18}
-                        color={exists ? colors.textMuted : season === 'Fall' ? '#F59E0B' :
-                          season === 'Spring' ? '#10B981' : '#EF4444'}
+                        color={exists ? colors.textMuted : season === 'Fall' ? Colors.warning :
+                          season === 'Spring' ? Colors.courseCompleted : Colors.danger}
                       />
                       <Text style={[styles.seasonBtnText, exists && styles.seasonBtnTextDisabled, { color: exists ? colors.textMuted : colors.text }]}>
                         {season}
@@ -989,23 +995,30 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   warningsContainer: {
-    backgroundColor: Colors.warning + '10',
-    borderRadius: 10,
-    padding: 10,
     marginBottom: 12,
-    gap: 6,
+    gap: 8,
   },
   warningRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  warningIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   warningText: {
     fontSize: 12,
     color: Colors.warning,
-    fontFamily: 'Inter_400Regular',
+    fontFamily: 'Inter_500Medium',
     flex: 1,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   plannedCourse: {
     flexDirection: 'row',

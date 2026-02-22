@@ -1,0 +1,14 @@
+drizzle.config.ts(1,10): error TS2305: Module '"drizzle-kit"' has no exported member 'defineConfig'.
+lib/offline-data.test.ts(1,40): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations.
+scripts/seed-firebase.ts(15,28): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/index.ts(186,11): error TS2451: Cannot redeclare block-scoped variable 'templatePath'.
+server/index.ts(193,11): error TS2451: Cannot redeclare block-scoped variable 'templatePath'.
+server/storage.test.ts(2,58): error TS2307: Cannot find module 'bun:test' or its corresponding type declarations.
+server/storage.ts(50,39): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/storage.ts(51,26): error TS7006: Parameter 'a' implicitly has an 'any' type.
+server/storage.ts(51,29): error TS7006: Parameter 'b' implicitly has an 'any' type.
+server/storage.ts(64,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/storage.ts(71,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/storage.ts(78,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/storage.ts(83,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+server/storage.ts(88,30): error TS7006: Parameter 'doc' implicitly has an 'any' type.

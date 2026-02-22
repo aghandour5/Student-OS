@@ -4,6 +4,7 @@ import {
   type CourseWithPrereqs
 } from "@shared/schema";
 import { db } from "./firebase";
+import type { DocumentData } from "firebase-admin/firestore";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -47,8 +48,8 @@ export class FirebaseStorage implements IStorage {
 
   async getAllCourses(): Promise<Course[]> {
     const snapshot = await this.db.collection("courses").get();
-    const courses = snapshot.docs.map(doc => doc.data() as Course);
-    return courses.sort((a, b) => {
+    const courses = snapshot.docs.map((doc: DocumentData) => doc.data() as Course);
+    return courses.sort((a: Course, b: Course) => {
       if (a.year !== b.year) return a.year - b.year;
       return a.semester - b.semester;
     });
@@ -61,31 +62,31 @@ export class FirebaseStorage implements IStorage {
 
   async getAllPrerequisites(): Promise<Prerequisite[]> {
     const snapshot = await this.db.collection("prerequisites").get();
-    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    return snapshot.docs.map((doc: DocumentData) => doc.data() as Prerequisite);
   }
 
   async getPrerequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
     const snapshot = await this.db.collection("prerequisites")
       .where("courseId", "==", courseId)
       .get();
-    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    return snapshot.docs.map((doc: DocumentData) => doc.data() as Prerequisite);
   }
 
   async getPostrequisitesForCourse(courseId: string): Promise<Prerequisite[]> {
     const snapshot = await this.db.collection("prerequisites")
       .where("requiresCourseId", "==", courseId)
       .get();
-    return snapshot.docs.map(doc => doc.data() as Prerequisite);
+    return snapshot.docs.map((doc: DocumentData) => doc.data() as Prerequisite);
   }
 
   async getAllOfferings(): Promise<Offering[]> {
     const snapshot = await this.db.collection("offerings").get();
-    return snapshot.docs.map(doc => doc.data() as Offering);
+    return snapshot.docs.map((doc: DocumentData) => doc.data() as Offering);
   }
 
   async getOfferingsForCourse(courseId: string): Promise<Offering[]> {
     const snapshot = await this.db.collection("offerings").where("courseId", "==", courseId).get();
-    return snapshot.docs.map(doc => doc.data() as Offering);
+    return snapshot.docs.map((doc: DocumentData) => doc.data() as Offering);
   }
 
   async getCoursesWithPrereqs(): Promise<CourseWithPrereqs[]> {

@@ -33,10 +33,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
+    // Cast to string to fix TS errors while auth screens are temporarily renamed to .bak
+    const rootSegment = segments[0] as string | undefined;
+    const inAuthGroup = rootSegment === 'login' || rootSegment === 'register' || rootSegment === 'forgot-password';
 
     // Force redirect to tabs during development (pause auth)
-    if (segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password') {
+    if (inAuthGroup) {
       router.replace('/(tabs)');
     }
 
@@ -45,7 +47,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     //   // router.replace('/login');
     // } else if (isAuthenticated && inAuthGroup) {
     //   // Redirect to tabs if already authenticated
-    //   router.replace('/(tabs)');
+    //   // router.replace('/(tabs)');
     // }
   }, [isAuthenticated, isLoading, segments]);
 
@@ -69,6 +71,7 @@ function ThemedRoot() {
       }}>
         <AuthGate>
           <Stack
+            initialRouteName="(tabs)"
             screenOptions={{
               headerBackTitle: "Back",
               headerShown: false,
@@ -77,9 +80,6 @@ function ThemedRoot() {
               gestureEnabled: true,
             }}
           >
-            <Stack.Screen name="login" options={{ headerShown: false, animation: "none" }} />
-            <Stack.Screen name="register" options={{ headerShown: false, animation: "slide_from_right" }} />
-            <Stack.Screen name="forgot-password" options={{ headerShown: false, animation: "slide_from_right" }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
             <Stack.Screen
               name="course/[id]"

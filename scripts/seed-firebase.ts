@@ -1,6 +1,7 @@
 
 import { db } from "../server/firebase";
 import { storage } from "../server/storage";
+import type { DocumentData } from "firebase-admin/firestore";
 
 async function clearCollection(collectionPath: string) {
     const collectionRef = db.collection(collectionPath);
@@ -12,7 +13,7 @@ async function clearCollection(collectionPath: string) {
     }
 
     const batch = db.batch();
-    snapshot.docs.forEach((doc) => {
+    snapshot.docs.forEach((doc: DocumentData) => {
         batch.delete(doc.ref);
     });
 

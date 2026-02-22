@@ -6,6 +6,7 @@
  * the server-side Firebase Admin SDK (server/firebase.ts).
  */
 import { initializeApp, getApps } from 'firebase/app';
+// @ts-ignore — getReactNativePersistence exists at runtime but is missing from the type definitions
 import { getAuth, initializeAuth, Auth, getReactNativePersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';

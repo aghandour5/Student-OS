@@ -41,6 +41,11 @@ export default function ToolsScreen() {
 
 
   const [activeTab, setActiveTab] = useState<'gpa' | 'projection' | 'whatif'>('gpa');
+  const [targetGPAInput, setTargetGPAInput] = useState('3.5');
+  const [whatIfCourseId, setWhatIfCourseId] = useState<string | null>(null);
+  const [whatIfSimulatedGrade, setWhatIfSimulatedGrade] = useState<string | null>(null);
+  const [whatIfSearch, setWhatIfSearch] = useState('');
+  const [creditsPerSemester, setCreditsPerSemester] = useState('15');
   const [projectionCourse, setProjectionCourse] = useState<string | null>(null);
   const [projWeights, setProjWeights] = useState({ quizzes: '20', midterm: '30', final: '50' });
   const [projScores, setProjScores] = useState({ quizzes: '', midterm: '', final: '' });
@@ -515,60 +520,251 @@ export default function ToolsScreen() {
         {activeTab === 'whatif' && (
           <>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>What-If Simulator</Text>
-            <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>See how changes affect your graduation</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textMuted }]}>Simulate scenarios & plan graduation</Text>
 
+            {/* Target GPA Calculator */}
             <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Ionicons name="trending-down" size={20} color={Colors.danger} />
+              <Ionicons name="flag" size={20} color={Colors.warning} />
               <View style={styles.whatifContent}>
-                <Text style={[styles.whatifTitle, { color: colors.text }]}>If you fail a course...</Text>
-                <Text style={[styles.whatifDesc, { color: colors.textSecondary }]}>
-                  Failing a prerequisite course will lock all dependent courses.
-                  Your graduation timeline may extend by 1-2 semesters.
-                </Text>
+                <Text style={[styles.whatifTitle, { color: colors.text }]}>Target GPA Calculator</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
+                  <Text style={{ color: colors.textSecondary }}>Target GPA:</Text>
+                  <TextInput
+                    style={[styles.projInput, { flex: 1, backgroundColor: colors.background, borderColor: colors.cardBorder, color: colors.text, height: 44, paddingHorizontal: 12, paddingVertical: 8 }]}
+                    value={targetGPAInput}
+                    onChangeText={setTargetGPAInput}
+                    keyboardType="numeric"
+                    placeholder="3.5"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+                {(() => {
+                  const inputVal = targetGPAInput.trim();
+                  if (inputVal === '') return null;
+                  const target = parseFloat(inputVal);
+
+                  if (isNaN(target) || target < 0 || target > 4.0) {
+                    return (
+                      <Text style={[styles.whatifDesc, { color: Colors.danger, marginTop: 8 }]}>
+                        Please enter a valid GPA between 0.0 and 4.0.
+                      </Text>
+                    );
+                  }
+
+                  const remaining = totalCredits - gradeAggregates.totalGradedCredits;
+                  if (remaining <= 0) return <Text style={[styles.whatifDesc, { color: colors.textMuted, marginTop: 8 }]}>No remaining credits.</Text>;
+                  const needed = (target * (gradeAggregates.totalGradedCredits + remaining) - gradeAggregates.totalGradePoints) / remaining;
+                  const possible = needed <= 4.0;
+                  return (
+                    <Text style={[styles.whatifDesc, { color: possible ? Colors.primary : Colors.danger, marginTop: 8 }]}>
+                      You need to average a {Math.max(0, needed).toFixed(2)} GPA across your remaining {remaining} credits ({possible ? 'achievable' : 'not mathematically possible'}).
+                    </Text>
+                  );
+                })()}
               </View>
             </View>
 
-            <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <MaterialCommunityIcons name="swap-horizontal" size={20} color={colors.primary} />
-              <View style={styles.whatifContent}>
-                <Text style={[styles.whatifTitle, { color: colors.text }]}>Credit overlap analysis</Text>
-                <Text style={[styles.whatifDesc, { color: colors.textSecondary }]}>
-                  {completedCredits} of {totalCredits} credits completed ({Math.round(completedCredits / totalCredits * 100)}%).
-                  {totalCredits - completedCredits} credits remaining.
+            {/* Course Grade Impact */}
+            {courses.length > 0 && (
+              <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Ionicons name="calculator" size={20} color={Colors.accent} />
+                  <Text style={[styles.whatifTitle, { color: colors.text }]}>Grade Impact Simulator</Text>
+                </View>
+                <Text style={[styles.whatifDesc, { color: colors.textSecondary, marginTop: 8, marginBottom: 8 }]}>
+                  Select a course and a simulated grade to see its impact on your cumulative GPA.
                 </Text>
-              </View>
-            </View>
 
+                {/* Course Search Bar */}
+                {whatIfCourseId ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, backgroundColor: Colors.accent + '15', borderRadius: 10, padding: 10, gap: 8 }}>
+                    <Ionicons name="checkmark-circle" size={18} color={Colors.accent} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: Colors.accent, fontWeight: '600', fontSize: 14 }}>
+                        {courseMap.get(whatIfCourseId)?.code}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12 }} numberOfLines={1}>
+                        {courseMap.get(whatIfCourseId)?.title}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setWhatIfCourseId(null);
+                        setWhatIfSimulatedGrade(null);
+                        setWhatIfSearch('');
+                      }}
+                      style={{ padding: 4 }}
+                    >
+                      <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder, paddingHorizontal: 10, marginBottom: 8 }}>
+                      <Ionicons name="search" size={16} color={colors.textMuted} />
+                      <TextInput
+                        style={{ flex: 1, height: 40, paddingHorizontal: 8, color: colors.text, fontSize: 14 }}
+                        value={whatIfSearch}
+                        onChangeText={setWhatIfSearch}
+                        placeholder="Search by code or name..."
+                        placeholderTextColor={colors.textMuted}
+                      />
+                      {whatIfSearch.length > 0 && (
+                        <Pressable onPress={() => setWhatIfSearch('')}>
+                          <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                        </Pressable>
+                      )}
+                    </View>
+                    {(() => {
+                      const query = whatIfSearch.toLowerCase().trim();
+                      const filtered = query.length > 0
+                        ? courses.filter(c => c.code.toLowerCase().includes(query) || c.title.toLowerCase().includes(query))
+                        : courses.slice(0, 5);
+                      return (
+                        <View style={{ marginBottom: 12 }}>
+                          {query.length === 0 && (
+                            <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 6 }}>Showing first 5 — type to search all courses</Text>
+                          )}
+                          {filtered.length === 0 && (
+                            <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 12 }}>No courses found</Text>
+                          )}
+                          {filtered.map(course => {
+                            const existingGrade = currentProgress.grades.find(g => g.courseId === course.id);
+                            return (
+                              <Pressable
+                                key={course.id}
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  setWhatIfCourseId(course.id);
+                                  setWhatIfSimulatedGrade(null);
+                                  setWhatIfSearch('');
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  paddingVertical: 8,
+                                  paddingHorizontal: 8,
+                                  borderBottomWidth: 1,
+                                  borderBottomColor: colors.cardBorder + '40',
+                                }}
+                              >
+                                <View style={{ flex: 1, marginRight: 8 }}>
+                                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '500' }}>{course.code}</Text>
+                                  <Text style={{ color: colors.textMuted, fontSize: 11 }} numberOfLines={1}>{course.title}</Text>
+                                </View>
+                                {existingGrade && (
+                                  <View style={{ backgroundColor: Colors.courseCompleted + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                                    <Text style={{ color: Colors.courseCompleted, fontSize: 11, fontWeight: '600' }}>{existingGrade.grade}</Text>
+                                  </View>
+                                )}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
+                  </>
+                )}
+
+                {whatIfCourseId && (
+                  <>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F'].map(grade => {
+                        const isSelected = whatIfSimulatedGrade === grade;
+                        return (
+                          <Pressable
+                            key={grade}
+                            onPress={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              setWhatIfSimulatedGrade(grade);
+                            }}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: isSelected ? Colors.primary : colors.cardBorder,
+                              backgroundColor: isSelected ? Colors.primary : colors.background,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Text style={{ color: isSelected ? '#fff' : colors.text, fontSize: 13, fontWeight: '600' }}>
+                              {grade}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    {whatIfSimulatedGrade && (() => {
+                      const course = courseMap.get(whatIfCourseId);
+                      const credits = course?.credits ?? 0;
+                      const simPoints = (GRADE_POINTS[whatIfSimulatedGrade] ?? 0) * credits;
+
+                      let newTotalPoints = gradeAggregates.totalGradePoints;
+                      let newTotalCredits = gradeAggregates.totalGradedCredits;
+
+                      const existingGrade = currentProgress.grades.find(g => g.courseId === whatIfCourseId);
+                      if (existingGrade) {
+                        newTotalPoints -= (GRADE_POINTS[existingGrade.grade] ?? 0) * credits;
+                        // credits won't change
+                      } else {
+                        newTotalCredits += credits;
+                      }
+                      newTotalPoints += simPoints;
+
+                      const newGPA = newTotalCredits > 0 ? (newTotalPoints / newTotalCredits) : 0;
+                      const diff = newGPA - gpa;
+
+                      return (
+                        <View style={{ marginTop: 8, padding: 12, backgroundColor: colors.background, borderRadius: 8 }}>
+                          <Text style={{ color: colors.text }}>
+                            New Cumulative GPA: <Text style={{ fontWeight: 'bold' }}>{newGPA.toFixed(2)}</Text>
+                          </Text>
+                          <Text style={{ color: diff > 0 ? Colors.primary : diff < 0 ? Colors.danger : colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                            {diff > 0 ? '+' : ''}{diff.toFixed(2)} Change
+                          </Text>
+                        </View>
+                      );
+                    })()}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Graduation Timeline Adjuster */}
             <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <Ionicons name="time" size={20} color={Colors.courseInProgress} />
               <View style={styles.whatifContent}>
-                <Text style={[styles.whatifTitle, { color: colors.text }]}>Estimated graduation</Text>
-                <Text style={[styles.whatifDesc, { color: colors.textSecondary }]}>
-                  At 15 credits/semester: ~{Math.ceil((totalCredits - completedCredits) / 15)} semesters remaining.
-                  At 18 credits/semester: ~{Math.ceil((totalCredits - completedCredits) / 18)} semesters remaining.
-                </Text>
+                <Text style={[styles.whatifTitle, { color: colors.text }]}>Dynamic Graduation Timeline</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 12 }}>
+                  <Text style={{ color: colors.textSecondary }}>Credits / Semester:</Text>
+                  <TextInput
+                    style={[styles.projInput, { flex: 1, backgroundColor: colors.background, borderColor: colors.cardBorder, color: colors.text, height: 44, paddingHorizontal: 12, paddingVertical: 8 }]}
+                    value={creditsPerSemester}
+                    onChangeText={setCreditsPerSemester}
+                    keyboardType="numeric"
+                    placeholder="15"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+                {(() => {
+                  const cps = parseFloat(creditsPerSemester);
+                  if (isNaN(cps) || cps <= 0) return null;
+                  const remaining = totalCredits - completedCredits;
+                  if (remaining <= 0) return <Text style={[styles.whatifDesc, { color: colors.textMuted, marginTop: 8 }]}>Already graduated!</Text>;
+                  const semesters = Math.ceil(remaining / cps);
+                  return (
+                    <Text style={[styles.whatifDesc, { color: Colors.courseInProgress, marginTop: 8 }]}>
+                      At {cps} credits per semester, you have ~{semesters} semester{semesters !== 1 ? 's' : ''} remaining to complete your {remaining} outstanding credits.
+                    </Text>
+                  );
+                })()}
               </View>
             </View>
-
-            {currentProgress.grades.length > 0 && (
-              <View style={[styles.whatifCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <Ionicons name="flag" size={20} color={Colors.warning} />
-                <View style={styles.whatifContent}>
-                  <Text style={[styles.whatifTitle, { color: colors.text }]}>GPA targets</Text>
-                  {[3.0, 3.5, 3.7].map(target => {
-                    const remaining = totalCredits - gradeAggregates.totalGradedCredits;
-                    if (remaining <= 0) return null;
-                    const needed = (target * (gradeAggregates.totalGradedCredits + remaining) - gradeAggregates.totalGradePoints) / remaining;
-                    const possible = needed <= 4.0;
-                    return (
-                      <Text key={target} style={[styles.whatifDesc, { color: possible ? Colors.accent : Colors.danger }]}>
-                        {target.toFixed(1)} GPA: Need {Math.max(0, needed).toFixed(2)} avg ({possible ? 'achievable' : 'not possible'})
-                      </Text>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
           </>
         )}
 
@@ -689,13 +885,9 @@ export default function ToolsScreen() {
         visible={showSupport}
         onClose={() => setShowSupport(false)}
         title="Feedback & Support"
-
+        subtitle="Encountered a bug or have a suggestion? Let us know!"
       >
-        <View style={{ paddingHorizontal: 16 }}>
-          <Text style={[styles.sectionSubtitle, { color: colors.textMuted, marginBottom: 20 }]}>
-            Encountered a bug or have a suggestion? Let us know!
-          </Text>
-
+        <View style={{ paddingBottom: 20 }}>
           <Pressable
             style={({ pressed }) => [
               styles.actionCard,
@@ -952,9 +1144,10 @@ const styles = StyleSheet.create({
   projInput: {
     backgroundColor: Colors.card,
     borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 48,
+    fontSize: 16,
     color: Colors.text,
     fontFamily: 'Inter_500Medium',
     borderWidth: 1,

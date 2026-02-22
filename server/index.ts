@@ -183,12 +183,6 @@ function configureExpoAndLanding(app: express.Application) {
       res.sendFile(path.join(distPath, "index.html"));
     });
   } else {
-    const templatePath = path.resolve(
-      process.cwd(),
-      "server",
-      "templates",
-      "landing-page.html",
-    );
     // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
     const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
