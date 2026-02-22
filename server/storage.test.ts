@@ -67,4 +67,21 @@ describe("FirebaseStorage", () => {
     expect(mockWhere).toHaveBeenCalledWith("requiresCourseId", "==", courseId);
     expect(mockGet).toHaveBeenCalled();
   });
+
+  test("getAllCourses should cache data after first call", async () => {
+    mockGet.mockImplementation(() => Promise.resolve({
+      docs: [
+        { data: () => ({ id: "c1", year: 1, semester: 1 }) }
+      ]
+    }));
+
+    // First call: Should hit the DB
+    await storage.getAllCourses();
+    expect(mockCollection).toHaveBeenCalledWith("courses");
+    expect(mockGet).toHaveBeenCalledTimes(1);
+
+    // Second call: Should return cached data (no new DB call)
+    await storage.getAllCourses();
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
 });
