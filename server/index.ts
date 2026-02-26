@@ -184,7 +184,6 @@ function configureExpoAndLanding(app: express.Application) {
     });
   } else {
     // Dynamic mode: Proxy to Metro bundler in Dev, or serve static assets in Prod
-    const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
     const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
     const appName = getAppName();
     const isDev = process.env.NODE_ENV === "development";
