@@ -1,0 +1,3 @@
+## 2024-05-18 - Prevent Duplicate Node Processing in BFS Traversal
+**Learning:** In diamond dependency structures (e.g., A->B->D and A->C->D), simple breadth-first search logic using a single global `visited` set is insufficient. Nodes from lower levels might end up duplicated in the same `nextLevel` array because the `visited` set is updated *after* pushing nodes into the array, not when enqueuing.
+**Action:** When performing a breadth-first search for graphs with diamond structures, use a `nextLevelSet` specific to the current level iteration. Only enqueue nodes into `nextLevel` if they are not in `visited` and not already in `nextLevelSet`. This guarantees distinct nodes at each breadth level traversal.
