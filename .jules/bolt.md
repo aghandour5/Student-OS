@@ -1,0 +1,4 @@
+
+## 2025-02-12 - Academic Context Performance Issue
+**Learning:** Storing array relationships (e.g. nested lists inside `profile.progress[major]`) meant `arePrereqsMet` and `getCourseStatus` used `.includes()`, resulting in `O(N)` scans. Every callback recreated when unrelated profile data changed (like notes) because `profile` was in the dependency array. Additionally, diamond dependencies in a BFS dependency traversal caused identical prerequisite evaluations in the same depth level.
+**Action:** Extract nested relational arrays into derived O(1) Sets using `useMemo()`. Scope callback dependencies to *these Sets* specifically rather than the parent object to prevent callback recreation and deep component un-mounting/re-rendering downstream. Add an intermediate level-tracking `nextLevelSet` for BFS graphs to ensure you don't evaluate overlapping dependencies multiple times.
