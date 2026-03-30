@@ -595,7 +595,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const currentProgress = profile.progress[profile.major];
 
     while (currentLevel.length > 0) {
-      const nextLevel: string[] = [];
+      const nextLevelSet = new Set<string>();
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -607,11 +607,11 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
-                nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
@@ -621,7 +621,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
       if (levelCourses.length > 0) {
         chain.push(levelCourses);
       }
-      currentLevel = nextLevel;
+      currentLevel = Array.from(nextLevelSet);
     }
 
     // Reverse so that the earliest prerequisites appear first
