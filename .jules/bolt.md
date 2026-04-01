@@ -1,0 +1,3 @@
+## 2024-05-24 - React Context Deep Dependencies and O(1) Sets
+**Learning:** `lib/academic-context.tsx` was recreating expensive callbacks (`getCourseStatus`, `arePrereqsMet`) every time ANY part of the `profile` object changed, and evaluating prerequisites using O(N) `Array.includes()`. Extracting targeted dependencies (`profile.major`, `profile.progress`) and deriving O(1) `Set`s locally for `completedCourses` and `inProgressCourses` dramatically reduces hook recreation and loop traversal time.
+**Action:** Always derive local O(1) Sets for lookups instead of using `Array.includes()` in loops, and narrowly scope React hook dependencies to specific properties of deep objects rather than the entire object to maximize referential stability.
