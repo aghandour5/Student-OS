@@ -1,0 +1,3 @@
+## 2024-04-02 - Stale State in React Updaters
+**Learning:** When creating derived state for performance optimizations (like `useMemo` Sets from an array) within a context provider, you cannot use these derived Sets inside functional state updaters (e.g., `setProfile(prev => ...)`). The Sets are captured from the render closure and contain stale state, leading to critical bugs where synchronous state updates overwrite each other.
+**Action:** Always strictly use the `prev` parameter passed to the updater function and standard array lookups (like `.includes()`) for any conditional logic within the updater, ensuring evaluations are made against the freshest possible state.
