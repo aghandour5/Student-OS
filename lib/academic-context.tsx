@@ -230,6 +230,14 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     }
   }, [profile, loaded]);
 
+  // Extract relevant arrays safely to satisfy exhaustive-deps while preventing unnecessary recalculations
+  const currentCompletedList = profile.progress[profile.major]?.completedCourses;
+  const currentInProgressList = profile.progress[profile.major]?.inProgressCourses;
+
+  // Memoize sets for O(1) lookups
+  const completedCoursesSet = useMemo(() => new Set(currentCompletedList || []), [currentCompletedList]);
+  const inProgressCoursesSet = useMemo(() => new Set(currentInProgressList || []), [currentInProgressList]);
+
   // O(1) course lookup used by most callbacks below
   const courseMap = useMemo(() => {
     const map = new Map<string, CourseWithPrereqs>();
@@ -242,21 +250,16 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const course = courseMap.get(courseId);
     if (!course) return false;
     if (course.prerequisites.length === 0) return true;
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return false;
-    return course.prerequisites.every(pid => currentProgress.completedCourses.includes(pid));
-  }, [courseMap, profile]);
+    return course.prerequisites.every(pid => completedCoursesSet.has(pid));
+  }, [courseMap, completedCoursesSet]);
 
   /** Resolve course status with priority: completed > in_progress > available > locked */
   const getCourseStatus = useCallback((courseId: string): CourseStatus => {
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return 'locked';
-
-    if (currentProgress.completedCourses.includes(courseId)) return 'completed';
-    if (currentProgress.inProgressCourses.includes(courseId)) return 'in_progress';
+    if (completedCoursesSet.has(courseId)) return 'completed';
+    if (inProgressCoursesSet.has(courseId)) return 'in_progress';
     if (arePrereqsMet(courseId)) return 'available';
     return 'locked';
-  }, [profile, arePrereqsMet]);
+  }, [completedCoursesSet, inProgressCoursesSet, arePrereqsMet]);
 
   const getPrerequisitesFor = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
@@ -273,13 +276,11 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const getMissingPrereqs = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
     if (!course) return [];
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return course.prerequisites.map(pid => courseMap.get(pid)).filter(Boolean) as CourseWithPrereqs[];
     return course.prerequisites
-      .filter(pid => !currentProgress.completedCourses.includes(pid))
+      .filter(pid => !completedCoursesSet.has(pid))
       .map(pid => courseMap.get(pid))
       .filter(Boolean) as CourseWithPrereqs[];
-  }, [courseMap, profile]);
+  }, [courseMap, completedCoursesSet]);
 
   /** Toggle a course between completed and not-completed.
    *  Completing also removes from inProgress; un-completing also removes its grade. */
@@ -339,10 +340,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const isYearCompleted = useCallback((year: number): boolean => {
     const yearCourses = courses.filter(c => c.year === year);
     if (yearCourses.length === 0) return false;
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return false;
-    return yearCourses.every(c => currentProgress.completedCourses.includes(String(c.id)));
-  }, [courses, profile]);
+    return yearCourses.every(c => completedCoursesSet.has(String(c.id)));
+  }, [courses, completedCoursesSet]);
 
   const toggleYearCompleted = useCallback((year: number) => {
     setProfile(prev => {
@@ -549,24 +548,22 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const totalCredits = useMemo(() => courses.reduce((sum, c) => sum + c.credits, 0), [courses]);
 
   const completedCredits = useMemo(() => {
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return 0;
-
-    return currentProgress.completedCourses.reduce((sum, cid) => {
+    let sum = 0;
+    completedCoursesSet.forEach(cid => {
       const course = courseMap.get(cid);
-      return sum + (course?.credits ?? 0);
-    }, 0);
-  }, [profile, courseMap]);
+      if (course) sum += course.credits;
+    });
+    return sum;
+  }, [completedCoursesSet, courseMap]);
 
   const inProgressCredits = useMemo(() => {
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return 0;
-
-    return currentProgress.inProgressCourses.reduce((sum, cid) => {
+    let sum = 0;
+    inProgressCoursesSet.forEach(cid => {
       const course = courseMap.get(cid);
-      return sum + (course?.credits ?? 0);
-    }, 0);
-  }, [profile, courseMap]);
+      if (course) sum += course.credits;
+    });
+    return sum;
+  }, [inProgressCoursesSet, courseMap]);
 
   const setCourseNote = useCallback((courseId: string, note: string) => {
     setProfile(prev => ({
@@ -592,11 +589,11 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const chain: CourseWithPrereqs[][] = [];
     let currentLevel = [courseId];
     const visited = new Set<string>();
-    const currentProgress = profile.progress[profile.major];
 
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
       const levelCourses: CourseWithPrereqs[] = [];
+      const nextLevelSet = new Set<string>();
 
       for (const id of currentLevel) {
         if (visited.has(id)) continue;
@@ -604,14 +601,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedCoursesSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
@@ -626,7 +624,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
 
     // Reverse so that the earliest prerequisites appear first
     return chain.reverse();
-  }, [courseMap, profile]);
+  }, [courseMap, completedCoursesSet]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
