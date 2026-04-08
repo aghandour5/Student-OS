@@ -1,0 +1,3 @@
+## 2024-04-08 - Use Set for O(1) membership lookups in useCallback
+**Learning:** Checking for course completion status using `array.includes()` inside callbacks that are mapped over courses results in O(n^2) or worse time complexity (e.g., when determining missing prereqs, course status, or prerequisite chains).
+**Action:** Use `useMemo` to convert completed and in-progress course arrays into `Set<string>` structures, giving O(1) time complexity for membership queries in large callback structures (like `arePrereqsMet`, `getCourseStatus`, `getMissingPrereqs`, `isYearCompleted`, and `getPrerequisiteChain`). This dramatically speeds up re-renders when rendering lists of course objects.
