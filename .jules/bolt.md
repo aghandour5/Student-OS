@@ -1,0 +1,3 @@
+## 2026-04-09 - [O(1) Set Lookups for Academic Context]
+**Learning:** Depending on deeply nested objects like `profile.progress[profile.major]` inside context hooks causes severe unnecessary re-renders when unrelated profile properties (like notes) update. Furthermore, using array `.includes()` repeatedly inside these hooks and graph traversals degrades performance to O(N).
+**Action:** Extract specific derived state (like arrays of course IDs) immediately before useMemo, then memoize them into O(1) `Set` structures. Use these derived Set structures both for fast lookup logic and as narrow dependency array requirements to significantly reduce re-evaluation scope.
