@@ -206,10 +206,29 @@ export default function DashboardScreen() {
     { threshold: totalCredits, label: 'Graduation!' },
   ], [totalCredits]);
 
-  const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
-  const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
-  const completedCoursesList = courses.filter(c => getCourseStatus(c.id) === 'completed');
-  const lockedCourses = courses.filter(c => getCourseStatus(c.id) === 'locked');
+  // Optimization: Group courses by status in a single pass to prevent calling
+  // expensive getCourseStatus 4x per course on every render.
+  const { availableCourses, inProgressCourses, completedCoursesList, lockedCourses } = useMemo(() => {
+    const available: CourseWithPrereqs[] = [];
+    const inProgress: CourseWithPrereqs[] = [];
+    const completed: CourseWithPrereqs[] = [];
+    const locked: CourseWithPrereqs[] = [];
+
+    courses.forEach(c => {
+      const status = getCourseStatus(c.id);
+      if (status === 'available') available.push(c);
+      else if (status === 'in_progress') inProgress.push(c);
+      else if (status === 'completed') completed.push(c);
+      else if (status === 'locked') locked.push(c);
+    });
+
+    return {
+      availableCourses: available,
+      inProgressCourses: inProgress,
+      completedCoursesList: completed,
+      lockedCourses: locked
+    };
+  }, [courses, getCourseStatus]);
 
   if (isLoading) {
     return (
