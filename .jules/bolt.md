@@ -1,0 +1,3 @@
+## 2026-04-18 - Optimize Academic Context performance with O(1) Lookups and BFS Improvements
+**Learning:** In heavily used contexts like lib/academic-context.tsx, O(N) array lookups (e.g. Array.includes) inside functional state logic or UI components can become significant bottlenecks, especially when rendering lists or traversing graphs like prerequisite trees. Converting derived data back and forth to O(1) Sets using useMemo scales much better.
+**Action:** When working on performance, derive Set structures for completedCourses and inProgressCourses to avoid redundant O(N) searches. In BFS algorithms, use a dedicated nextLevelSet to prevent duplicate additions at the same breadth level for diamond dependency structures.
