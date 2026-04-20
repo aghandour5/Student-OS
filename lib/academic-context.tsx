@@ -237,26 +237,41 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     return map;
   }, [courses]);
 
+  const currentMajorProgress = profile.progress[profile.major];
+  const completedCoursesList = currentMajorProgress?.completedCourses;
+  const inProgressCoursesList = currentMajorProgress?.inProgressCourses;
+
+  // ⚡ Bolt Performance Optimization:
+  // Pre-compute Set data structures for O(1) lookup time.
+  // Converting the arrays to Sets prevents O(N) array traversals (via .includes)
+  // during frequent status checks. Scoping hook dependencies to these lists
+  // prevents unnecessary handler recreation when unrelated profile data changes.
+  // Impact: Reduces lookup complexity from O(N) to O(1) for faster list rendering.
+  const completedCoursesSet = useMemo(
+    () => new Set(completedCoursesList || []),
+    [completedCoursesList]
+  );
+
+  const inProgressCoursesSet = useMemo(
+    () => new Set(inProgressCoursesList || []),
+    [inProgressCoursesList]
+  );
+
   /** Check if all prerequisite courses are in the student's completedCourses list */
   const arePrereqsMet = useCallback((courseId: string): boolean => {
     const course = courseMap.get(courseId);
     if (!course) return false;
     if (course.prerequisites.length === 0) return true;
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return false;
-    return course.prerequisites.every(pid => currentProgress.completedCourses.includes(pid));
-  }, [courseMap, profile]);
+    return course.prerequisites.every(pid => completedCoursesSet.has(pid));
+  }, [courseMap, completedCoursesSet]);
 
   /** Resolve course status with priority: completed > in_progress > available > locked */
   const getCourseStatus = useCallback((courseId: string): CourseStatus => {
-    const currentProgress = profile.progress[profile.major];
-    if (!currentProgress) return 'locked';
-
-    if (currentProgress.completedCourses.includes(courseId)) return 'completed';
-    if (currentProgress.inProgressCourses.includes(courseId)) return 'in_progress';
+    if (completedCoursesSet.has(courseId)) return 'completed';
+    if (inProgressCoursesSet.has(courseId)) return 'in_progress';
     if (arePrereqsMet(courseId)) return 'available';
     return 'locked';
-  }, [profile, arePrereqsMet]);
+  }, [completedCoursesSet, inProgressCoursesSet, arePrereqsMet]);
 
   const getPrerequisitesFor = useCallback((courseId: string): CourseWithPrereqs[] => {
     const course = courseMap.get(courseId);
@@ -592,10 +607,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const chain: CourseWithPrereqs[][] = [];
     let currentLevel = [courseId];
     const visited = new Set<string>();
-    const currentProgress = profile.progress[profile.major];
 
     while (currentLevel.length > 0) {
-      const nextLevel: string[] = [];
+      // ⚡ Bolt Performance Optimization:
+      // Use nextLevelSet to prevent duplicate processing of courses
+      // within the same BFS level (e.g. diamond dependencies).
+      // Impact: Reduces redundant node processing and prevents duplicate courses in UI.
+      const nextLevelSet = new Set<string>();
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -604,14 +622,14 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedCoursesSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
-                nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
@@ -621,12 +639,12 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
       if (levelCourses.length > 0) {
         chain.push(levelCourses);
       }
-      currentLevel = nextLevel;
+      currentLevel = Array.from(nextLevelSet);
     }
 
     // Reverse so that the earliest prerequisites appear first
     return chain.reverse();
-  }, [courseMap, profile]);
+  }, [courseMap, completedCoursesSet]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
