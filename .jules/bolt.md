@@ -1,0 +1,5 @@
+## 2024-05-15 - Optimize BFS Graph Traversal with Next-Level Deduplication
+
+**Learning:** When performing a Breadth-First Search (BFS) graph traversal (e.g., resolving prerequisite chains), a global `visited` Set alone is insufficient for preventing duplicate node processing within the exact same BFS breadth layer if the graph contains "diamond" dependency structures (e.g., Course A -> B and C; both B and C -> D). Both B and C will attempt to push D to the `nextLevel` array because D is not yet in the global `visited` Set (it only gets added when processed on the next loop iteration). This can lead to exponential explosion in `nextLevel` array size in deep/complex academic prerequisite trees.
+
+**Action:** Always maintain both a global `visited` Set (for nodes already processed) AND a local `nextLevelSet` (for nodes already queued for the next processing layer) when traversing directed acyclic graphs representing dependencies to guarantee optimal O(V+E) performance and prevent redundant tree branches. Additionally, convert linear Arrays (like `completedCourses`) into Sets *before* the traversal loop rather than relying on `Array.includes()` within the loop.
