@@ -1,0 +1,3 @@
+## 2026-04-26 - BFS Diamond Dependency Duplication
+**Learning:** In `getPrerequisiteChain`, relying only on a global `visited` Set is insufficient for diamond dependencies (e.g., A -> B, A -> C, B & C -> D) because child nodes (D) are only added to `visited` when they are *processed* in the next level, not when they are *queued*. This causes duplicate nodes to be pushed to the level queue and level results array.
+**Action:** Always maintain a `nextLevelSet` (or similar local tracking) when queuing nodes in a BFS graph traversal to prevent processing identical nodes multiple times within the same breadth level. Convert arrays to Sets before graph traversals to avoid O(N^2) inner-loop array lookups.
