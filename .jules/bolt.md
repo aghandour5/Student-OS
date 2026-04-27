@@ -1,0 +1,4 @@
+# Bolt Journal
+## 2024-05-18 - BFS Graph Traversal with Diamond Dependencies
+**Learning:** When executing a BFS traversal of a prerequisite graph (like `getPrerequisiteChain`), relying solely on a global `visited` set is insufficient for preventing duplicate processing *within the exact same breadth level* if the graph has diamond dependency structures (e.g., Course A unlocks B and C, both B and C unlock D). This results in course D being queued and processed multiple times in the same level pass before `visited` can track it across different levels.
+**Action:** Always maintain a local `nextLevelSet` during each breadth level iteration in BFS algorithms over directed acyclic graphs to prevent duplicate node queuing within the same level. Additionally, convert array lookups (like `completedCourses.includes()`) to a global `Set` before the BFS loop to optimize `O(N)` lookups to `O(1)`.
