@@ -1,0 +1,3 @@
+## 2024-05-18 - Optimized BFS Prerequisite Graph Traversal
+**Learning:** In a directed acyclic graph (like course prerequisites), diamond dependencies (e.g. Course A depends on B and C, which both depend on D) can cause the same node to be processed multiple times within the exact same breadth level of a BFS search if we only check a global `visited` Set. This is because the node won't be marked as `visited` until the *next* iteration.
+**Action:** When performing level-order BFS, use both a global `visited` Set to track overall processed nodes across the tree, and a local `nextLevelSet` to prevent duplicate nodes from being queued or processed within the exact same breadth level.
