@@ -1,0 +1,3 @@
+## 2026-04-29 - [Memoize List Categorization]
+**Learning:** The pattern of performing multiple separate Array.prototype.filter() passes over a large array to categorize items into distinct arrays, especially when the filter condition involves an expensive operation like a context lookup, incurs an O(N) penalty multiplied by the number of categories and executes the expensive check redundantly.
+**Action:** Consolidate multiple filter passes into a single traversal using Array.prototype.forEach() or Array.prototype.reduce(), caching the result with useMemo. This reduces the time complexity factor and minimizes the invocation of expensive lookups.
