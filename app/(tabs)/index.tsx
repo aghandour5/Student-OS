@@ -206,10 +206,36 @@ export default function DashboardScreen() {
     { threshold: totalCredits, label: 'Graduation!' },
   ], [totalCredits]);
 
-  const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
-  const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
-  const completedCoursesList = courses.filter(c => getCourseStatus(c.id) === 'completed');
-  const lockedCourses = courses.filter(c => getCourseStatus(c.id) === 'locked');
+  // Performance: Combine multiple filter passes and avoid redundant getCourseStatus evaluations
+  const { availableCourses, inProgressCourses, completedCoursesList, lockedCourses, yearCourseCounts } = useMemo(() => {
+    const available: typeof courses = [];
+    const inProgress: typeof courses = [];
+    const completed: typeof courses = [];
+    const locked: typeof courses = [];
+    const yearCounts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+
+    courses.forEach(c => {
+      // 1. Group by status
+      const status = getCourseStatus(c.id);
+      if (status === 'available') available.push(c);
+      else if (status === 'in_progress') inProgress.push(c);
+      else if (status === 'completed') completed.push(c);
+      else if (status === 'locked') locked.push(c);
+
+      // 2. Tally by year
+      if (c.year !== undefined && yearCounts[c.year] !== undefined) {
+        yearCounts[c.year]++;
+      }
+    });
+
+    return {
+      availableCourses: available,
+      inProgressCourses: inProgress,
+      completedCoursesList: completed,
+      lockedCourses: locked,
+      yearCourseCounts: yearCounts,
+    };
+  }, [courses, getCourseStatus]);
 
   if (isLoading) {
     return (
@@ -389,7 +415,7 @@ export default function DashboardScreen() {
           <View style={styles.yearCheckboxRow}>
             {[0, 1, 2, 3].map(year => {
               const checked = isYearCompleted(year);
-              const yearCourseCount = courses.filter(c => c.year === year).length;
+              const yearCourseCount = yearCourseCounts[year] || 0;
               const yearLabel = year === 0 ? 'Foundation' : `Year ${year}`;
               return (
                 <Pressable
