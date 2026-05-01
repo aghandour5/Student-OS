@@ -1,0 +1,3 @@
+## 2024-05-01 - [O(1) lookups for array fields inside react contexts]
+**Learning:** Arrays inside context states (like \`completedCourses\`) that are heavily queried in rendering loops (using \`.includes()\`) create severe O(N) bottlenecks in lists. However, directly converting state arrays to Sets causes React reference issues inside functional updaters.
+**Action:** Use \`useMemo\` to derive an O(1) Set strictly for *reading* data within the context hook's dependency tree, but continue using array \`.includes()\` on the \`prev\` state variable inside state \`setProfile\` updaters to maintain staleness-safety.
