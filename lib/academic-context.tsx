@@ -594,9 +594,16 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // Bolt: O(1) lookup for completed courses
+    const completedSet = new Set(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
       const levelCourses: CourseWithPrereqs[] = [];
+
+      // Bolt: Deduplicate items correctly in a single breadth level traversal
+      // and avoid re-processing nodes (e.g. diamond dependency structures)
+      const nextLevelSet = new Set<string>();
 
       for (const id of currentLevel) {
         if (visited.has(id)) continue;
@@ -604,14 +611,17 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        // Bolt: O(1) check using completedSet instead of O(N) array includes
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            // Bolt: Prevent duplicate nodes across whole tree OR within same level
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
