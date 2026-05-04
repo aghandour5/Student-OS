@@ -1,0 +1,4 @@
+
+## 2024-05-04 - Optimize Breadth-First Search (BFS) Dependency Tracking
+**Learning:** In diamond dependency structures (e.g. A->B->D and A->C->D), using only a global `visited` Set across iterations can still lead to duplicate nodes within the *exact same* breadth level. This is because multiple parent nodes processed in the same loop iteration might try to push the same shared prerequisite into `nextLevel` before the outer loop can mark it as visited in a subsequent iteration. Furthermore, calling `Array.includes()` inside inner loops for lookups scales as O(N^2), causing performance degradation.
+**Action:** When tracking prerequisites through BFS traversal, always use both a global `visited` Set to avoid cyclical loops AND a local `nextLevelSet` inside the loop to ensure uniqueness for the upcoming level. Additionally, extract derived array checks (like `completedCourses.includes`) into an O(1) Set (`completedSet`) outside the iteration block.
