@@ -1,0 +1,2 @@
+## 2024-05-05 - Performance optimization exploration\n**Learning:** Just starting\n**Action:** Looking for places to optimize
+## 2024-05-05 - Optimize Set Lookups in Academic Context\n**Learning:** The arePrereqsMet and getCourseStatus functions inside lib/academic-context.tsx are called heavily (likely inside list rendering for courses), and they use Array.includes() on completedCourses and inProgressCourses. This is O(N) for every prerequisite check.\n**Action:** Memoize completedCourses and inProgressCourses as Set objects to make these lookups O(1).
