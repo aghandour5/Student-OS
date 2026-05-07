@@ -1,0 +1,3 @@
+## 2024-05-24 - [Optimize BFS Diamond Dependency Queue Size]
+**Learning:** When performing BFS on graphs with diamond dependencies (e.g. A->B->D and A->C->D), using only a global `visited` set prevents processing nodes multiple times, but doesn't prevent pushing the same node (D) to the `nextLevel` queue multiple times in the same iteration level. This leads to duplicate elements in arrays representing the level, and larger queue sizes.
+**Action:** Use a local level set (`nextLevelSet`) inside the BFS `while` loop to check if a node has already been added to the queue for the next level, ensuring duplicate nodes from different parents in the same breadth level are only queued once.
