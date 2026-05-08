@@ -596,6 +596,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
 
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
+      const nextLevelSet = new Set<string>();
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -607,11 +608,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            // Optimization: Use nextLevelSet to prevent duplicate node processing in diamond dependency structures within the same BFS level
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
