@@ -1,0 +1,3 @@
+## 2024-05-24 - Context Memoization Optimizations
+**Learning:** In the `lib/academic-context.tsx`, operations like `arePrereqsMet` and `getCourseStatus` were recalculating array `includes` inside their execution path. By leveraging `useMemo` to create a `completedSet` and `inProgressSet` inside the Provider, we change O(N) array checks to O(1) set checks. Also, `getPrerequisiteChain` was using a linear array `nextLevel` without deduplication, meaning that it processed duplicates at the same BFS level. Moving `nextLevel` to a `Set` within the loop resolved that performance bug.
+**Action:** Always derive index data structures (like Sets or Maps) once using `useMemo` for any context handlers that process data in loops or are called frequently from mapped children elements.
