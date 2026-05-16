@@ -1,0 +1,6 @@
+## 2026-05-16 - O(1) Sets in React Context
+**Learning:** When storing derived state like Sets inside React Context to optimize list renderings,  dependencies must only reference the deeply nested required properties (e.g. `profile.progress[major].completedCourses`) to prevent unnecessary `Set` recreations whenever unrelated context fields (like `notes` or `major`) update.
+**Action:** Extract the specific nested array into a top-level variable *before* the `useMemo` block to ensure ESLint exhaustive-deps is satisfied and reference equality is preserved when the array itself doesn't change.
+## 2023-10-27 - O(1) Sets in React Context
+**Learning:** When storing derived state like Sets inside React Context to optimize list renderings, `useMemo` dependencies must only reference the deeply nested required properties (e.g. `profile.progress[major].completedCourses`) to prevent unnecessary `Set` recreations whenever unrelated context fields (like `notes` or `major`) update.
+**Action:** Extract the specific nested array into a top-level variable *before* the `useMemo` block to ensure ESLint exhaustive-deps is satisfied and reference equality is preserved when the array itself doesn't change.
