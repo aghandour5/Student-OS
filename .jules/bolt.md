@@ -1,0 +1,3 @@
+## 2024-05-24 - [BFS Optimization in Prerequisite Chain Calculation]
+**Learning:** The BFS algorithm for calculating the prerequisite chain (`getPrerequisiteChain` in `lib/academic-context.tsx`) lacked duplicate checks within a single breadth level (`nextLevelSet`), causing redundant processing and duplicate course entries in diamond dependency structures. Also, `.includes()` on an array is O(N), which becomes a bottleneck in deeply nested structures compared to a Set `.has()` which is O(1).
+**Action:** Use a `nextLevelSet` to track uniqueness within the current exploration layer to stop duplication within diamond structures, and pre-compute arrays into Sets prior to iterative filtering processes for constant-time complexity lookups.
