@@ -1,0 +1,3 @@
+## 2024-05-24 - [Optimize BFS Prerequisite Chain Traversal]
+**Learning:** The previous implementation of `getPrerequisiteChain` used an O(N) array `.includes()` operation inside a nested BFS loop. Additionally, it failed to prevent duplicate processing of the same prerequisites in a single breadth level for diamond dependency structures, causing redundant loop iterations.
+**Action:** When performing BFS traversals, pre-compute required state arrays into a `Set` prior to loop execution to convert O(N) array `.includes()` operations into O(1) Set `.has()` lookups. Introduce a `nextLevelSet` to track dependencies inside the level array to prevent duplicate processing within the exact same breadth level.

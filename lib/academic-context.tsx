@@ -594,9 +594,14 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // Pre-compute completed courses into a Set for O(1) lookups
+    const completedSet = new Set<string>(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
       const levelCourses: CourseWithPrereqs[] = [];
+      // Use nextLevelSet to prevent duplicate processing within the exact same breadth level in diamond dependency structures
+      const nextLevelSet = new Set<string>();
 
       for (const id of currentLevel) {
         if (visited.has(id)) continue;
@@ -604,14 +609,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
@@ -626,7 +632,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
 
     // Reverse so that the earliest prerequisites appear first
     return chain.reverse();
-  }, [courseMap, profile]);
+}, [courseMap, profile]);
 
   const resetProfile = useCallback(() => {
     setProfile(DEFAULT_PROFILE);
