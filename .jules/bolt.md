@@ -1,0 +1,3 @@
+## 2024-05-20 - O(1) Lookups & BFS Deduplication
+**Learning:** React Contexts providing functions (e.g. `getCourseStatus`, `arePrereqsMet`) that run O(N) array `.includes()` operations create O(N^2) bottlenecks when rendering lists. Additionally, BFS graph traversals for prerequisites (like `getPrerequisiteChain`) can process the same node multiple times on the same breadth level if diamond dependencies exist, causing redundant work.
+**Action:** Always pre-compute frequently accessed arrays into `Set` objects using `useMemo` for O(1) lookups. In BFS algorithms, use both a global `visited` Set for cross-level tracking and a local `nextLevelSet` to prevent duplicate processing within the current level.
