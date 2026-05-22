@@ -1,0 +1,3 @@
+## 2024-05-22 - BFS Optimization in Prerequisite Chain
+**Learning:** The `getPrerequisiteChain` function in `lib/academic-context.tsx` utilized an O(N) array `.includes()` check for completed courses during its Breadth-First Search (BFS) traversal, resulting in an O(V * C) bottleneck (V = visited nodes, C = completed courses length). Additionally, diamond dependency structures (e.g. A depends on B and C, both B and C depend on D) caused duplicate node insertions into `nextLevel` within the same BFS depth level because `visited` is checked after generation.
+**Action:** Pre-compute `completedCourses` into a `Set` before traversal for O(1) lookups, and use a local `nextLevelSet` to de-duplicate nodes at the current tree depth, ensuring purely linear BFS traversal time.
