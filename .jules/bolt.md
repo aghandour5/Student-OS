@@ -1,0 +1,3 @@
+## 2024-05-23 - Replaced O(N) array includes with O(1) Set lookups
+**Learning:** Checking for completed and in-progress courses was repeatedly using `array.includes()` which is O(N). Because `lib/academic-context.tsx` uses a React Context where state is passed down to many child components, these lookups happened frequently inside render cycles.
+**Action:** Created `completedSet` and `inProgressSet` using `useMemo` so we can do O(1) `.has()` checks instead. Used `useMemo` specifically on `profile.progress` to only reconstruct the Set when the actual progress state changes, saving significant computation on large course lists and BFS tree traversals (`getPrerequisiteChain`).
