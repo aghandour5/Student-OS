@@ -1,0 +1,3 @@
+## 2024-05-26 - BFS Traversal Pre-Computation & Duplicate Mitigation
+**Learning:** In nested loop BFS graph traversals (like computing prerequisite chains), missing local sets per depth level allows duplicates when encountering diamond dependency structures (A->B->D and A->C->D). Additionally, repeated `Array.includes()` inside the nested loop generates severe performance bottlenecks O(N^2) instead of O(N).
+**Action:** When working with nested loops over graphs, extract dependency arrays into a pre-computed Set before the loop. Implement a `nextLevelSet` inside the loop per depth level to filter out nodes inserted into the array from different branches in the same loop step.
