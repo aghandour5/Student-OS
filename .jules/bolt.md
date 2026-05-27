@@ -1,0 +1,3 @@
+## 2025-10-24 - BFS Graph Traversal Optimizations
+**Learning:** Prerequisite calculations (`getPrerequisiteChain`) using BFS need both a global `visited` Set to track processed nodes and a local `nextLevelSet` to prevent duplicate processing within the exact same breadth level in diamond dependency structures (e.g., A->B->D and A->C->D). Also, pre-computing reference arrays into a `Set` before loops converts O(N) `.includes()` into O(1) `.has()`.
+**Action:** Always pre-compute arrays into Sets for lookups within loops, and use level-specific Sets alongside global visited Sets in BFS traversal for graph data structures with diamond patterns.
