@@ -1,0 +1,3 @@
+## 2024-05-29 - [BFS Graph Traversal Optimizations in Prerequisites]
+**Learning:** Prerequisite calculations (`getPrerequisiteChain`) using BFS suffer from duplicate node processing in diamond dependencies (e.g., A->B->D and A->C->D) if uniqueness isn't tracked locally per breadth level. Additionally, O(N*M) lookups occur when using array `.includes()` for missing prerequisites checks inside the graph loop.
+**Action:** Always use `Set` for O(1) array lookups before executing graph traversals, and implement both global (`visited`) and local (`nextLevelSet`) trackers to prevent duplicate processing within the exact same BFS level.
