@@ -1,0 +1,3 @@
+## 2024-05-20 - Optimize getPrerequisiteChain BFS traversal
+**Learning:** In diamond dependency structures, a BFS traversal without a local level-specific visited set can result in duplicate processing within the same breadth level. Also, evaluating array `.includes()` for completed courses inside a graph traversal loop creates an unnecessary O(N^2) bottleneck.
+**Action:** When implementing complex traversals like BFS, pre-compute reference arrays into a `Set` prior to loop execution for O(1) lookups, and use both global `visited` and local `nextLevelSet` tracking to prevent duplicate node processing.
