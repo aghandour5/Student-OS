@@ -1,0 +1,3 @@
+## 2024-05-24 - Optimizing BFS graph traversals for prerequisites
+**Learning:** In diamond dependency structures (e.g., A requires B and C, which both require D), standard BFS without local level deduplication adds node D multiple times to the next level queue. Coupled with O(N) array `.includes()` for prerequisite checking, this causes O(N*M) bottlenecks during complex course tree rendering.
+**Action:** When implementing BFS or nested loops over graph structures, always pre-compute reference arrays (like `completedCourses`) into a `Set` for O(1) lookups, and use a local level Set to prevent duplicate node processing within the same breadth level.
