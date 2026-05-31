@@ -594,8 +594,12 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // Pre-compute O(1) lookup set for completed courses
+    const completedSet = new Set(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
+      const nextLevelSet = new Set<string>(); // Prevent duplicate processing in same level
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -604,14 +608,17 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        // O(1) lookup instead of O(N) array .includes
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
+
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
