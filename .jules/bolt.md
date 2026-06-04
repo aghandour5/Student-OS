@@ -1,0 +1,3 @@
+## 2024-06-04 - Memoize arrays to Sets for context providers
+**Learning:** When context providers perform N+1 or O(N^2) checks inside hooks using `.includes()` on arrays (e.g., mapping over courses and checking prerequisites), deriving a `Set` using `useMemo` prevents massive performance bottlenecks by converting O(N) array lookups to O(1) Set lookups. Crucially, functional state updaters must still use `.includes()` on the most recent `prev` state rather than the memoized Sets to prevent stale closure bugs.
+**Action:** Extract optional chaining into a separate variable before `useMemo` to satisfy linters, and utilize local O(1) Set derivations for heavy read-only context functions.
