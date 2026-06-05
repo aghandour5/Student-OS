@@ -206,10 +206,28 @@ export default function DashboardScreen() {
     { threshold: totalCredits, label: 'Graduation!' },
   ], [totalCredits]);
 
-  const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
-  const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
-  const completedCoursesList = courses.filter(c => getCourseStatus(c.id) === 'completed');
-  const lockedCourses = courses.filter(c => getCourseStatus(c.id) === 'locked');
+  // ⚡ Bolt: Consolidated 4 O(N) filters into a single memoized O(N) pass to prevent redundant getCourseStatus calls
+  const { availableCourses, inProgressCourses, completedCoursesList, lockedCourses } = useMemo(() => {
+    const available = [];
+    const inProgress = [];
+    const completed = [];
+    const locked = [];
+
+    courses.forEach(c => {
+      const status = getCourseStatus(c.id);
+      if (status === 'available') available.push(c);
+      else if (status === 'in_progress') inProgress.push(c);
+      else if (status === 'completed') completed.push(c);
+      else if (status === 'locked') locked.push(c);
+    });
+
+    return {
+      availableCourses: available,
+      inProgressCourses: inProgress,
+      completedCoursesList: completed,
+      lockedCourses: locked
+    };
+  }, [courses, getCourseStatus]);
 
   if (isLoading) {
     return (
