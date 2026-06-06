@@ -1,0 +1,3 @@
+## 2024-05-01 - Optimize BFS Traversal with Set Lookups and Deduplication
+**Learning:** O(N) array `.includes()` lookups inside BFS graph traversals (like prerequisite calculations) cause significant performance bottlenecks. Furthermore, diamond dependency structures can lead to redundant processing in the same breadth level if not tracked locally.
+**Action:** Always pre-compute reference arrays (e.g., `completedCourses`) into a `Set` before complex traversals to ensure O(1) lookups. Additionally, implement a local `nextLevelSet` during BFS to prevent duplicate processing within the exact same breadth level.
