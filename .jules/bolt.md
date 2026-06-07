@@ -1,0 +1,3 @@
+## 2024-03-22 - Optimize getPrerequisiteChain BFS Traversal
+**Learning:** In complex traversals like BFS graph traversal for prerequisites, converting reference arrays (like `completedCourses`) into a `Set` before execution avoids O(N) lookup operations inside loops. Furthermore, adding a `nextLevelSet` to track nodes within the same breadth level prevents duplicate processing in diamond dependency structures, significantly optimizing execution paths.
+**Action:** Always pre-compute reference arrays to Sets for inner-loop lookups and use local Sets to avoid duplicate evaluation of nodes at the same traversal depth in graph algorithms.
