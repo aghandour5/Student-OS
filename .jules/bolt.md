@@ -1,0 +1,3 @@
+## 2025-02-14 - Optimize prerequisite BFS calculation
+**Learning:** In diamond dependency structures (e.g. A->B->D, A->C->D), BFS graph traversals can redundantly process nodes and duplicate them in the returned array if a `visited` Set only accounts for previously processed levels. Furthermore, O(N) array inclusion checks inside iterative loops cause performance bottlenecks.
+**Action:** When implementing BFS algorithms, use a local `nextLevelSet` to deduplicate nodes within the same breadth level, and pre-compute O(1) lookup Sets (e.g. `completedSet`) outside loops for any required condition checks.
