@@ -1,0 +1,3 @@
+## 2025-06-11 - Optimize BFS traversal for Prerequisite Chain Calculations
+**Learning:** The previous implementation of the BFS algorithm used O(N) array '.includes()' inside nested loops for completed course lookups, and did not properly handle duplicate queuing within the same breadth level for diamond dependency graph shapes (e.g. A->B->D, A->C->D), leading to redundant path computations.
+**Action:** Pre-calculate Sets prior to traversing, such as a 'completedSet' for O(1) checks. To prevent redundancy within the exact same level queuing, introduce a localized 'nextLevelSet' in addition to the global 'visited' set.
