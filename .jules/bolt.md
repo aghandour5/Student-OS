@@ -1,0 +1,3 @@
+## 2024-05-24 - BFS Duplicate Processing in Academic Context
+**Learning:** The `getPrerequisiteChain` BFS traversal in `lib/academic-context.tsx` suffered from two inefficiencies: O(N) array lookups within the loop via `.includes()` on `completedCourses`, and duplicate node processing within the same breadth level for diamond dependencies, causing exponential queue growth.
+**Action:** Pre-compute reference arrays (like `completedCourses`) into a `Set` before loops, and always use a local `nextLevelSet` in addition to the global `visited` Set during BFS graph traversals to prevent duplicates in the same breadth level.
