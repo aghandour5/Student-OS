@@ -1,0 +1,3 @@
+## 2024-06-16 - BFS Optimization with Diamond Dependencies
+**Learning:** When performing breadth-first search (BFS) traversals on graphs with diamond dependencies (e.g., A->B, A->C, B->D, C->D), checking a global `visited` set is not enough if nodes are pushed to the next level before they are processed. This leads to duplicate processing of the same node (D) within a single breadth level.
+**Action:** Introduce a local `nextLevelSet` to track nodes already added to the current breadth level's queue, preventing duplicates before they are processed in the next iteration. Also, pre-compute arrays (like `completedCourses`) into a Set to convert O(N) filters into O(1) lookups during traversal.
