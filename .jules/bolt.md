@@ -1,0 +1,3 @@
+## $(date +%Y-%m-%d) - Optimize Context with Memoized Sets
+**Learning:** In React Contexts managing complex state, using `Array.includes()` inside O(N) loops creates O(N²) bottlenecks. Additionally, depending on the full state object (e.g., `profile`) inside `useCallback` dependency arrays causes widespread re-renders when unrelated properties change.
+**Action:** Extract specific derived state (like arrays of IDs) into `useMemo` Sets to achieve O(1) algorithmic performance. Then, scope the `useCallback` dependency arrays exclusively to these derived Sets instead of the full state object, stabilizing references and preventing unnecessary child component re-renders.
