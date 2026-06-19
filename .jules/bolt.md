@@ -1,0 +1,3 @@
+## 2025-02-14 - O(N) Array Inclusions in React Context Mapping
+**Learning:** In `lib/academic-context.tsx`, operations like `arePrereqsMet` and `getCourseStatus` are executed frequently during list rendering, evaluating prerequisites using O(N) `Array.includes()` on the completed courses list. This becomes an O(N^2) bottleneck for long lists or deep dependency graphs.
+**Action:** Always compute derived O(1) references like `new Set(completedCourses)` locally with `useMemo` when performing repeated existence checks inside mapped context callbacks, rather than re-evaluating array inclusion every time.
