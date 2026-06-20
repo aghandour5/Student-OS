@@ -1,0 +1,3 @@
+## 2024-06-20 - Academic Context Prerequisite Calculation Optimization
+**Learning:** In the `getPrerequisiteChain`, `arePrereqsMet`, and `getMissingPrereqs` functions of `lib/academic-context.tsx`, operations over the `completedCourses` array were checking `.includes()` in loops over prerequisites. `completedCourses` can become large, meaning O(N) `.includes()` within O(P) prerequisite loops causes an O(N*P) bottleneck. This is specially painful in `getPrerequisiteChain` where this is evaluated within nested loops and a BFS queue.
+**Action:** Always pre-compute `.includes()` operations into a `Set` (e.g. `const completedSet = new Set(currentProgress?.completedCourses || []);`) to reduce lookups to O(1) before entering loops/iterations.
