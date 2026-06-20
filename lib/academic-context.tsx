@@ -244,7 +244,8 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     if (course.prerequisites.length === 0) return true;
     const currentProgress = profile.progress[profile.major];
     if (!currentProgress) return false;
-    return course.prerequisites.every(pid => currentProgress.completedCourses.includes(pid));
+    const completedSet = new Set(currentProgress.completedCourses);
+    return course.prerequisites.every(pid => completedSet.has(pid));
   }, [courseMap, profile]);
 
   /** Resolve course status with priority: completed > in_progress > available > locked */
@@ -275,8 +276,9 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     if (!course) return [];
     const currentProgress = profile.progress[profile.major];
     if (!currentProgress) return course.prerequisites.map(pid => courseMap.get(pid)).filter(Boolean) as CourseWithPrereqs[];
+    const completedSet = new Set(currentProgress.completedCourses);
     return course.prerequisites
-      .filter(pid => !currentProgress.completedCourses.includes(pid))
+      .filter(pid => !completedSet.has(pid))
       .map(pid => courseMap.get(pid))
       .filter(Boolean) as CourseWithPrereqs[];
   }, [courseMap, profile]);
@@ -594,9 +596,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // O(1) lookup map for prerequisites filtering inside nested loops
+    const completedSet = new Set(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
       const levelCourses: CourseWithPrereqs[] = [];
+      const nextLevelSet = new Set<string>(); // Prevent duplicate processing in diamond dependencies
 
       for (const id of currentLevel) {
         if (visited.has(id)) continue;
@@ -604,14 +610,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
