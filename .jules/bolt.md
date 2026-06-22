@@ -1,0 +1,3 @@
+## 2024-06-22 - BFS Duplicate Processing & Array Lookup Optimization
+**Learning:** The BFS traversal in `getPrerequisiteChain` was processing diamond dependencies exponentially because nodes weren't tracked for duplicates within the *same* breadth level. Additionally, O(N) array `.includes()` operations inside rendering loops and graph traversals create severe performance bottlenecks.
+**Action:** Always pre-compute reference arrays (like `completedCourses`) into a `Set` for O(1) lookups before executing complex traversals or mappings. For BFS, use both a global `visited` Set to track processed nodes across the tree and a local `nextLevelSet` to prevent duplicate processing within the exact same breadth level.
