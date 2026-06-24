@@ -1,0 +1,3 @@
+## 2024-05-14 - Optimize Academic Context Calculations
+**Learning:** Found O(N) array `.includes()` operations inside critical academic logic loops (`arePrereqsMet`, `getMissingPrereqs`, `calculateSemesterGPA`, and `getPrerequisiteChain`). Creating Sets locally inside the render function caused memory allocation issues on each render.
+**Action:** Replaced O(N) `.includes()` lookups with O(1) `Set` lookups. Crucially, memoized the `completedSet` and `inProgressSet` globally in `lib/academic-context.tsx` using `useMemo` so they are only recreated when the underlying lists change, preventing Garbage Collection thrashing.
