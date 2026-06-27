@@ -286,6 +286,7 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const toggleCourseCompleted = useCallback((courseId: string) => {
     setProfile(prev => {
       const currentP = prev.progress[prev.major];
+      // Note: We use .includes() here because we are reading from the previous state updater (prev)
       const isCompleted = currentP.completedCourses.includes(courseId);
 
       let newP;
@@ -594,8 +595,13 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // Bolt Optimization: Pre-compute completed courses as a Set to convert O(N) array includes to O(1) lookups
+    const completedSet = new Set(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
+      // Bolt Optimization: Prevent duplicate processing within the exact same breadth level in diamond dependencies
+      const nextLevelSet = new Set<string>();
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -604,14 +610,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
