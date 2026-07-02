@@ -134,28 +134,6 @@ export default function DashboardScreen() {
   const gpa = calculateGPA();
   const progress = totalCredits > 0 ? completedCredits / totalCredits : 0;
 
-  const categoryNames = useMemo(() => {
-    return Object.keys(Colors.categoryColors);
-  }, []);
-
-  const categoryStats = useMemo(() => {
-    const stats: Record<string, { total: number; completed: number; totalCredits: number; completedCredits: number }> = {};
-    for (const name of categoryNames) {
-      stats[name] = { total: 0, completed: 0, totalCredits: 0, completedCredits: 0 };
-    }
-    courses.forEach(c => {
-      const cat = c.category || '';
-      if (!stats[cat]) return;
-      stats[cat].total += 1;
-      stats[cat].totalCredits += c.credits;
-      if (getCourseStatus(c.id) === 'completed') {
-        stats[cat].completed += 1;
-        stats[cat].completedCredits += c.credits;
-      }
-    });
-    return stats;
-  }, [courses, getCourseStatus, categoryNames]);
-
   // Filter search results based on query and selected category
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -206,10 +184,27 @@ export default function DashboardScreen() {
     { threshold: totalCredits, label: 'Graduation!' },
   ], [totalCredits]);
 
-  const availableCourses = courses.filter(c => getCourseStatus(c.id) === 'available');
-  const inProgressCourses = courses.filter(c => getCourseStatus(c.id) === 'in_progress');
-  const completedCoursesList = courses.filter(c => getCourseStatus(c.id) === 'completed');
-  const lockedCourses = courses.filter(c => getCourseStatus(c.id) === 'locked');
+  const { availableCourses, inProgressCourses, completedCoursesList, lockedCourses } = useMemo(() => {
+    const available = [];
+    const inProgress = [];
+    const completed = [];
+    const locked = [];
+
+    for (const c of courses) {
+      const status = getCourseStatus(c.id);
+      if (status === 'available') available.push(c);
+      else if (status === 'in_progress') inProgress.push(c);
+      else if (status === 'completed') completed.push(c);
+      else locked.push(c);
+    }
+
+    return {
+      availableCourses: available,
+      inProgressCourses: inProgress,
+      completedCoursesList: completed,
+      lockedCourses: locked
+    };
+  }, [courses, getCourseStatus]);
 
   if (isLoading) {
     return (
