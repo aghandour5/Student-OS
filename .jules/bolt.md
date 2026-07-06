@@ -1,0 +1,3 @@
+## 2024-05-15 - BFS Duplicate Node Anti-Pattern
+**Learning:** In diamond-shaped dependency graphs (e.g., A -> B -> D and A -> C -> D), a simple BFS traversal that only checks a global `visited` set before pushing children to the next level can result in the same node being added multiple times *within the exact same breadth level* if multiple paths converge on it simultaneously. This causes redundant work, and potentially breaks UI mapping logic if arrays expect unique items per level.
+**Action:** When performing BFS level-by-level traversals on graphs with converging paths, always use an additional local `nextLevelSet` to track and prevent duplicate nodes from being queued into the very same level array, even if they aren't globally `visited` yet.

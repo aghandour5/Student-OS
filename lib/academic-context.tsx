@@ -591,12 +591,22 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
   const getPrerequisiteChain = useCallback((courseId: string): CourseWithPrereqs[][] => {
     const chain: CourseWithPrereqs[][] = [];
     let currentLevel = [courseId];
+    // Global visited set prevents infinite loops and revisiting previously processed nodes
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
+
+    // ⚡ Bolt Optimization: Pre-compute completed courses into a Set.
+    // This converts O(N) array .includes() lookups into O(1) Set .has() operations
+    // inside the nested filtering loop below.
+    const completedSet = new Set(currentProgress?.completedCourses || []);
 
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
       const levelCourses: CourseWithPrereqs[] = [];
+
+      // ⚡ Bolt Optimization: Local nextLevelSet prevents duplicate nodes from being queued
+      // into the same breadth level array when dealing with diamond-shaped dependencies.
+      const nextLevelSet = new Set<string>();
 
       for (const id of currentLevel) {
         if (visited.has(id)) continue;
@@ -604,14 +614,17 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        // O(1) lookup against completedSet
+        const missingPrereqs = course.prerequisites.filter(pid => !completedSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            // Only queue if not already visited globally AND not already queued for this specific level
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
