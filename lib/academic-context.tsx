@@ -594,8 +594,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
     const visited = new Set<string>();
     const currentProgress = profile.progress[profile.major];
 
+    // Performance optimization: Pre-compute completed courses into a Set
+    // to avoid O(N) array .includes() lookups inside the nested BFS loops.
+    const completedCoursesSet = new Set(currentProgress?.completedCourses || []);
+
     while (currentLevel.length > 0) {
       const nextLevel: string[] = [];
+      // Performance optimization: Track courses queued for the next level
+      // to prevent duplicate processing of diamond dependencies in the same level.
+      const nextLevelSet = new Set<string>();
       const levelCourses: CourseWithPrereqs[] = [];
 
       for (const id of currentLevel) {
@@ -604,14 +611,15 @@ export function AcademicProvider({ children }: { children: ReactNode }) {
         const course = courseMap.get(id);
         if (!course) continue;
 
-        const missingPrereqs = course.prerequisites.filter(pid => !currentProgress || !currentProgress.completedCourses.includes(pid));
+        const missingPrereqs = course.prerequisites.filter(pid => !completedCoursesSet.has(pid));
         if (missingPrereqs.length > 0) {
           for (const pid of missingPrereqs) {
-            if (!visited.has(pid)) {
+            if (!visited.has(pid) && !nextLevelSet.has(pid)) {
               const prereqCourse = courseMap.get(pid);
               if (prereqCourse) {
                 levelCourses.push(prereqCourse);
                 nextLevel.push(pid);
+                nextLevelSet.add(pid);
               }
             }
           }
